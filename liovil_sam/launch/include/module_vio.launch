@@ -1,0 +1,6 @@
+<launch>
+  <arg name="project" default="liovil_sam"/>
+
+  <!-- vio node -->
+  <node name="$(arg project)_smart_smoother"  pkg="$(arg project)" type="$(arg project)_smart_smoother" cwd="node" output="screen"/>
+</launch>
