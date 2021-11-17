@@ -1,0 +1,42 @@
+<launch>
+  <arg name="project" default="liovil_sam"/>
+
+  <group ns="mapping" >
+    <group ns="left" >
+      <node pkg="image_proc" type="image_proc" name="left_image_proc" />
+      <node pkg="nodelet" type="nodelet" args="standalone image_proc/resize"
+	    name="left_resize">
+	<param name="scale_height" value="0.5" />
+	<param name="scale_width" value="0.5" />
+
+	<remap from="image" to="image_rect_color" />
+
+	<remap from="~image" to="scaled/image_rect_color" />
+	<remap from="~camera_info" to="scaled/camera_info" />
+	
+	</node>
+    </group>
+    <group ns="right" >
+      <node pkg="image_proc" type="image_proc" name="right_image_proc" output="screen" />
+      <node pkg="nodelet" type="nodelet" args="standalone image_proc/resize"
+	    name="right_resize">
+	<param name="scale_height" value="0.5" />
+	<param name="scale_width" value="0.5" />
+
+ 	<remap from="image" to="image_rect_color" />
+
+	<remap from="~image" to="scaled/image_rect_color" />
+	<remap from="~camera_info" to="scaled/camera_info" />
+	</node>
+    </group>
+  </group>
+
+
+  <!-- frontend node -->
+  <arg name="frontend" default="v"/>
+  <node name="$(arg project)_visual_frontend" pkg="$(arg project)" type="$(arg project)_visual_frontend" cwd="node" output="screen" />
+
+  <!-- visualization -->
+  <node name="$(arg project)_show_frame_node" pkg="$(arg project)" type="$(arg project)_show_frame_node" output="screen"/>
+
+</launch>

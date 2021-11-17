@@ -1,0 +1,298 @@
+
+##################################################
+#                  Lidar Mapping 
+##################################################
+
+lidar:
+ # lidar_vio_feature_extract parameter
+ lidar_topic: "/velodyne_points"
+ vio_odom_topic: "/liovil/odom_imu"
+ scanPeriod: 0.1
+ N_SCANS: 16
+ systemDelay: 0 #2
+ num: 200000
+ leafSize: 0.2
+ lowerBound: -24.9
+ upperBound: 2
+ edgeThre1: 2
+ edgeThre2: 20
+ surfThre: 10 #4
+ edgeCurvatureThre: 0.1
+ imu2lidar: [1, 0, 0, -0.011356,0, -1, 0,  -0.002352, 0,  0, -1, -0.08105, 0,  0, 0, 1] #found this in congs computer
+ #
+ # lidarmapping parameter
+ scanPeriod: 0.1
+ cornerLeafSize: 0.2
+ surfLeafSize: 0.4
+ mapLeafSize: 0.6
+ bisquareWeight: 0.1
+ outlier_threshold: 0.1
+ map_cell_size: 0.1
+ edge_threshold: 10
+ surf_threshold: 10 #100
+ maxIterNum: 10
+ validPointsThreshold: 50
+
+##################################################
+#                   Visual Frontend
+##################################################
+
+vio:
+ rescale_factor: 1.0
+ tracking_method: "HYBRID_BASED" # OPTICALFLOW_BASED FEATURE_BASED HYBRID_BASED
+ descriptor: "ORB" # SURF SIFT
+ descriptor_distance_both_ways: false
+ feature_extraction_boundary: 5
+ feature_search_boundary: 20
+ min_dist_from_camera: 4
+ max_disparity: 899.6
+ # hybrid based
+ patch_num_r: 5
+ patch_num_c: 5
+ reextract_patch_number: 10
+ matcher_distance_threshold: 40
+ # LKT based
+ stereo_tracking_search_window: 49
+ frame2frame_tracking_search_window: 15 #15
+ percent_border: 0.01
+ #methods
+ old_hybrid: true
+ custom_matcher: false
+ # corner detector
+ corner_number: 100
+ percent_matches: 0.4
+ percent_min_corners: 0.3
+ hybrid_percent_tracked_corners: 0.3
+ addl_corners: 10 #10
+ equalize_histogram: true
+ refine_corners_after_corner_extraction: true
+ refine_corners_after_optical_flow: false
+ max_disparity_alignment_threshold: 3
+ landmark_search_radius: 10
+ display_tracking_ui: true
+ write_matches_to_file: false
+ display_verbose_output: false
+ imu_topic: "/xsens/imu/data"
+ frontend_topic: "/stereo_matches"
+ #lidar_topic: "/aft_mapped_to_init" 
+ lidar_topic: "/lio_sam/mapping/odometry_incremental" #usr
+ loop_closure_topic: "/lc_pose"
+ # publisher
+ odom_imu_rate_topic: "/liovil/odom_imu"
+ odom_camera_rate_topic: "odom_camera"
+ camera_pose_visual_topic: "odom_camera_visual"
+ camera_path_publish_topic: "odom_camera_path"
+ landmark_topic: "landmarks"
+ fx: 730.445095428
+ fy: 730.445095428
+ cx: 331.480882645
+ cy: 265.039070129
+ baseline: 0.247279067378212
+ lag_to_use: 15
+ bound_optimizer: true
+ use_isam2: false #not implemented
+ max_iteration: 4
+ absolute_error_toleration: 0.001
+ relative_error_toleration: 0.001
+ lambda_upper_bound: 1000
+ use_ceres_default: false
+ # set noise
+ camera_sigma: 6 # 6 for FEATURE_BASE, 4 orig
+ imu_gyro_bias_noise_sigma: 0.1 #0.01 # rad
+ imu_acce_bias_noise_sigma: 0.005 #0.005 # m
+ state_pose_trans_noise_sigma: 0.1 # 0.01 // intial position
+ state_pose_orien_noise_sigma: 0.1321 # 0.1321 # 0.02
+ state_velocity_noise_sigma: 0.0001 # 0.005 // initial velocity
+ accelerameter_noise_cov: [0.0004, 0, 0, 0, 0.0004, 0, 0, 0, 0.0004]
+ gyroscope_noise_cov:  [0.0004363323129985824, 0, 0, 0, 0.0004363323129985824, 0, 0, 0, 0.0004363323129985824]
+ accelerameter_bias_cov: [0.0002, 0, 0, 0, 0.0002, 0, 0, 0, 0.0002]
+ gyroscope_bias_cov: [0.0003, 0, 0, 0, 0.0003, 0, 0, 0, 0.0003]
+ integration_cov_sigma2: 0.0000001
+ bias_accelermeter_intgration_sigma2: 0.0001
+ lidar_feedback_sigma_trans: 0.07
+ lidar_feedback_sigma_orien: 0.05
+ # whether use lidar feedback
+ lidar_feedback: true # true
+ time_interval_to_use_lidar_feedback: 0.1 #0.001
+ # set extrinsic IMU and Lidar
+ T_I_Lidar: [1, 0, 0, -0.011356,
+             0, -1, 0,  -0.002352,
+             0,  0, -1, -0.08105,
+             0,  0, 0, 1]
+ #FY
+ quat_I_LC: [0.503096384820381, -0.49276446989981, 0.500896743794452, -0.501684436262218]
+ posi_I_LC: [0.0870551272380779, -0.107604788194452, 0.0180391607070435]
+ 
+ landmark_distance_threshold: 200 #200
+ outlier_rejection_threshold: 5 # 5 8
+ # set frontend screening parameter
+ robust_feature_ratio: 0.1
+ number_frame_tracked: 4 #4
+ triangulation_landmark_distance_threshold: 200 #200
+ triangulation_outlier_rejection_threshold: 6 # 6 8
+
+
+##################################################
+#                   LIOSAM
+##################################################
+lio_sam:
+  # Topics
+  pointCloudTopic: "/velodyne_points"               # Point cloud data
+  imuTopic: "/xsens/imu/data"                         # IMU data
+  odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
+  gpsTopic: "odometry/gpsz"                   # GPS odometry topic from navsat, see module_navsat.launch file
+
+  # Frames
+  lidarFrame: "velodyne"
+  baselinkFrame: "base_link"
+  odometryFrame: "odom"
+  mapFrame: "map"
+
+  # GPS Settings
+  useImuHeadingInitialization: true           # if using GPS data, set to "true"
+  useGpsElevation: true                      # if GPS elevation is bad, set to "false"
+  gpsCovThreshold: 10.0                        # m^2, threshold for using GPS data
+  poseCovThreshold: 3.0                      # m^2, threshold for using GPS data
+  
+  # Export settings
+  savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
+  savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
+
+  # Sensor Settings
+  sensor: velodyne                            # lidar sensor type, either 'velodyne' or 'ouster'
+  N_SCAN: 16                                  # number of lidar channel (i.e., 16, 32, 64, 128)
+  Horizon_SCAN: 1800                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048)
+  downsampleRate: 1                           # default: 1. Downsample your data if too many points. i.e., 16 = 64 / 4, 16 = 16 / 1
+  lidarMinRange: 1.0                          # default: 1.0, minimum lidar range to be used
+  lidarMaxRange: 1000.0                       # default: 1000.0, maximum lidar range to be used
+
+  # IMU Settings
+  imuAccNoise: 3.9939570888238808e-03
+  imuGyrNoise: 1.5636343949698187e-03
+  imuAccBiasN: 6.4356659353532566e-05
+  imuGyrBiasN: 3.5640318696367613e-05
+  imuGravity: 9.80511
+  imuRPYWeight: 0.01
+
+  # Extrinsics (lidar -> IMU)
+  extrinsicTrans: [0.0, 0.0, 0.0]
+  #extrinsicRot: [-1, 0, 0,
+  #                0, 1, 0,
+  #                0, 0, -1]
+  #extrinsicRPY: [0,  1, 0,
+  #               -1, 0, 0,
+  #                0, 0, 1]
+  extrinsicRot: [1, 0, 0,
+                  0, -1, 0,
+                  0, 0, -1]
+  extrinsicRPY: [1, 0, 0,
+                  0, -1, 0,
+                  0, 0, -1]
+
+  # LOAM feature threshold
+  edgeThreshold: 1.0
+  surfThreshold: 0.1
+  edgeFeatureMinValidNum: 10
+  surfFeatureMinValidNum: 100
+
+  # voxel filter paprams
+  odometrySurfLeafSize: 0.4                     # default: 0.4 - outdoor, 0.2 - indoor
+  mappingCornerLeafSize: 0.4                    # default: 0.2 - outdoor, 0.1 - indoor
+  mappingSurfLeafSize: 0.4                      # default: 0.4 - outdoor, 0.2 - indoor
+
+  # robot motion constraint (in case you are using a 2D robot)
+  z_tollerance: 1000                            # meters
+  rotation_tollerance: 1000                     # radians
+
+  # CPU Params
+  numberOfCores: 4                              # number of cores for mapping optimization
+  mappingProcessInterval: 0.15                  # seconds, regulate mapping frequency
+
+  # Surrounding map
+  surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
+  surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
+  surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
+  surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
+
+  # Loop closure
+  loopClosureEnableFlag: true
+  loopClosureFrequency: 3.0                     # Hz, regulate loop closure constraint add frequency
+  surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
+  historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
+  historyKeyframeSearchTimeDiff: 30.0           # seconds, key frame that is n seconds older will be considered for loop closure
+  historyKeyframeSearchNum: 25                  # number of hostory key frames will be fused into a submap for loop closure
+  historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
+
+  # Visualization
+  globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius
+  globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
+  globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
+
+
+##################################################
+#               Robot Localization 
+##################################################
+
+navsat:
+  frequency: 50
+  wait_for_datum: false
+  delay: 0.0
+  magnetic_declination_radians: 0
+  yaw_offset: 0
+  zero_altitude: false
+  broadcast_utm_transform: false
+  broadcast_utm_transform_as_parent_frame: false
+  publish_filtered_gps: false
+
+# EKF for Navsat
+ekf_gps:
+  publish_tf: false
+  map_frame: map
+  odom_frame: odom
+  base_link_frame: base_link
+  world_frame: odom
+
+  frequency: 50
+  two_d_mode: false
+  sensor_timeout: 0.01
+  # -------------------------------------
+  # External IMU:
+  # -------------------------------------
+  imu0: /xsens/imu/data
+  # make sure the input is aligned with ROS REP105. "imu_correct" is manually transformed by myself. EKF can also transform the data using tf between your imu and base_link
+  imu0_config: [false, false, false,
+                true,  true,  true,
+                false, false, false,
+                false, false, true,
+                true,  true,  true]
+  imu0_differential: false
+  imu0_queue_size: 50 
+  imu0_remove_gravitational_acceleration: true
+  # -------------------------------------
+  # Odometry (From Navsat):
+  # -------------------------------------
+  odom0: odometry/gps
+  odom0_config: [true,  true,  true,
+                 false, false, false,
+                 false, false, false,
+                 false, false, false,
+                 false, false, false]
+  odom0_differential: false
+  odom0_queue_size: 10
+
+  #                            x     y     z     r     p     y   x_dot  y_dot  z_dot  r_dot p_dot y_dot x_ddot y_ddot z_ddot
+  process_noise_covariance: [  1.0,  0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    1.0,  0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    10.0, 0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0.03, 0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0.03, 0,    0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0.1,  0,     0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0.25,  0,     0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0.25,  0,     0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0.04,  0,    0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0.01, 0,    0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0.01, 0,    0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0.5,  0,    0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0.01, 0,      0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0.01,   0,
+                               0,    0,    0,    0,    0,    0,    0,     0,     0,     0,    0,    0,    0,    0,      0.015]

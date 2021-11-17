@@ -1,0 +1,15 @@
+<launch>
+
+    <arg name="project" default="liovil_sam"/>
+
+    <!-- IMU Filted Madgwick -->
+    <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imuFilter" respawn="true" output="screen">
+        <param name="fixed_frame" value="odom"/>
+        <param name="use_mag" value="false"/>
+        <param name="world_frame" value="enu"/>
+        <param name="publish_tf" value="false"/>
+        <param name="remove_gravity_vector" value="true"/>
+
+        <remap from="imu/data_raw" to="/vinebot_0/imu_rion" />
+    </node>
+</launch>

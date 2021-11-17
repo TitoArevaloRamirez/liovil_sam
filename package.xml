@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>liovil_sam</name>
+  <version>0.0.0</version>
+  <description>The liovil_sam package</description>
+
+  <maintainer email="frc-ag@todo.todo">frc-ag</maintainer>
+
+  <license>TODO</license>
+
+  <author>Tixiao Shan, Weizhao Shao</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roscpp</build_depend>
+  <exec_depend>roscpp</exec_depend>
+  <build_depend>rospy</build_depend>
+  <exec_depend>rospy</exec_depend>
+
+  <build_depend>tf</build_depend>
+  <exec_depend>tf</exec_depend>
+
+  <build_depend>cv_bridge</build_depend>
+  <exec_depend>cv_bridge</exec_depend>
+
+  <build_depend>pcl_conversions</build_depend>
+  <exec_depend>pcl_conversions</exec_depend>
+
+  <build_depend>std_msgs</build_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <build_depend>nav_msgs</build_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <build_depend>visualization_msgs</build_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+
+  <!-- Visual Frontend -->
+  <build_depend>image_transport</build_depend>
+  <exec_depend>image_transport</exec_depend>
+
+  <build_depend>pcl_ros</build_depend>
+  <exec_depend>pcl_ros</exec_depend>
+  <!--  -->
+
+  <!-- VIO -->
+  <build_depend>stereo_msgs</build_depend>
+  <exec_depend>stereo_msgs</exec_depend>
+
+  <!-- <build_depend>opencv2</build_depend>
+  <exec_depend>opencv2</exec_depend> -->
+
+  <!--  -->
+
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_generation</exec_depend>
+  <build_depend>message_runtime</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <build_depend>GTSAM</build_depend>
+  <exec_depend>GTSAM</exec_depend>
+
+</package>
