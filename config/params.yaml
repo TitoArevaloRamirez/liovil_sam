@@ -38,12 +38,12 @@ lidar:
 ##################################################
 
 vio:
- rescale_factor: 1.0
+ rescale_factor: 0.5
  tracking_method: "HYBRID_BASED" # OPTICALFLOW_BASED FEATURE_BASED HYBRID_BASED
- descriptor: "ORB" # SURF SIFT
+ descriptor: "ORB" # ORB SURF SIFT
  descriptor_distance_both_ways: false
- feature_extraction_boundary: 5
- feature_search_boundary: 20
+ feature_extraction_boundary: 15
+ feature_search_boundary: 15
  min_dist_from_camera: 4
  max_disparity: 899.6
  # hybrid based
@@ -54,16 +54,16 @@ vio:
  # LKT based
  stereo_tracking_search_window: 49
  frame2frame_tracking_search_window: 15 #15
- percent_border: 0.01
+ percent_border: 0.1
  #methods
  old_hybrid: true
  custom_matcher: false
  # corner detector
- corner_number: 100
+ corner_number: 50
  percent_matches: 0.4
  percent_min_corners: 0.3
  hybrid_percent_tracked_corners: 0.3
- addl_corners: 10 #10
+ addl_corners: 5 #10
  equalize_histogram: true
  refine_corners_after_corner_extraction: true
  refine_corners_after_optical_flow: false
@@ -72,6 +72,7 @@ vio:
  display_tracking_ui: true
  write_matches_to_file: false
  display_verbose_output: false
+
  imu_topic: "/xsens/imu/data"
  frontend_topic: "/stereo_matches"
  #lidar_topic: "/aft_mapped_to_init" 
@@ -83,10 +84,16 @@ vio:
  camera_pose_visual_topic: "odom_camera_visual"
  camera_path_publish_topic: "odom_camera_path"
  landmark_topic: "landmarks"
- fx: 730.445095428
- fy: 730.445095428
- cx: 331.480882645
- cy: 265.039070129
+# Drone
+ fx: 719.4674
+ fy: 719.4674
+ cx: 682.85536
+ cy: 555.98205
+ #indoor
+ #fx: 730.445095428
+ #fy: 730.445095428
+ #cx: 331.480882645
+ #cy: 265.039070129
  baseline: 0.247279067378212
  lag_to_use: 15
  bound_optimizer: true

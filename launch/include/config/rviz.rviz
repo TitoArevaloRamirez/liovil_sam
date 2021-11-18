@@ -43,8 +43,6 @@ Visualization Manager:
             All Enabled: false
             base_link:
               Value: false
-            camera_odom:
-              Value: true
             chassis_link:
               Value: false
             gps_link:
@@ -66,8 +64,6 @@ Visualization Manager:
           Show Names: true
           Tree:
             map:
-              camera_odom:
-                {}
               odom:
                 base_link:
                   chassis_link:
@@ -89,12 +85,12 @@ Visualization Manager:
           Reference Frame: map
           Value: true
         - Class: rviz/Axes
-          Enabled: false
+          Enabled: true
           Length: 1
           Name: base_link
           Radius: 0.30000001192092896
           Reference Frame: base_link
-          Value: false
+          Value: true
       Enabled: true
       Name: links
     - Class: rviz/Group
@@ -150,7 +146,7 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: false
-          Enabled: false
+          Enabled: true
           Keep: 3000
           Name: Odom GPS
           Position Tolerance: 0.10000000149011612
@@ -166,7 +162,7 @@ Visualization Manager:
             Value: Axes
           Topic: /odometry/gps
           Unreliable: false
-          Value: false
+          Value: true
         - Angle Tolerance: 0.10000000149011612
           Class: rviz/Odometry
           Covariance:
@@ -492,7 +488,8 @@ Visualization Manager:
           Marker Topic: /lio_sam/mapping/loop_closure_constraints
           Name: Loop constraint
           Namespaces:
-            {}
+            loop_edges: true
+            loop_nodes: true
           Queue Size: 100
           Value: true
       Enabled: true
@@ -570,7 +567,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 81.9500732421875
+      Distance: 109.93327331542969
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -585,10 +582,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8403984904289246
+      Pitch: 0.9997966885566711
       Target Frame: base_link
       Value: Orbit (rviz)
-      Yaw: 3.6966686248779297
+      Yaw: 5.126668453216553
     Saved: ~
 Window Geometry:
   Displays:
@@ -604,5 +601,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 807
-  X: 449
-  Y: 27
+  X: 105
+  Y: 39

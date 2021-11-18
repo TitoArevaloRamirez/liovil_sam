@@ -29,6 +29,12 @@
     -->
     <include file="$(find liovil_sam)/launch/include/module_navsat.launch" />
 
+    <!--- Run gps frame_ID 
+    -->
+    <node pkg="$(arg project)" type="gps_renameFrameID.py" name="$(arg project)_renameGPS_FrameID" output="screen">
+        <remap from="/gps_save" to="/dji_sdk/gps_position" />
+    </node>
+
     <!--- Run Rviz 
     -->
     <include file="$(find liovil_sam)/launch/include/module_rviz.launch" />
