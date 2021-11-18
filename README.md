@@ -9,6 +9,7 @@ ROS (tested Melodic)
     sudo apt-get install -y ros-kinetic-robot-state-publisher
 
 gtsam (Georgia Tech Smoothing and Mapping library)
+
     wget -O ~/Downloads/gtsam.zip https://github.com/borglab/gtsam/archive/4.0.2.zip
     cd ~/Downloads/ && unzip gtsam.zip -d ~/Downloads/
     cd ~/Downloads/gtsam-4.0.2/
@@ -18,9 +19,11 @@ gtsam (Georgia Tech Smoothing and Mapping library)
     
 VILSAM dependencies:
   Install velodyne driver:
+  
     sudo apt-get install ros-melodic-velodyne
 
   Install opencv and checkout 3.3.1 tag
+  
     git clone https://github.com/opencv/opencv.git
     cd opencv
     git checkout 3.3.1 -b v3.3.1
@@ -31,8 +34,9 @@ VILSAM dependencies:
     cd ..
 
   Now build it
-    
-    mkdir opencv_build; cd opencv_build; mkdir ../opencv_install
+    mkdir opencv_build
+    cd opencv_build
+    mkdir ../opencv_install
     cmake -D CMAKE_BUILD_TYPE=RELEASE \
             -D CMAKE_INSTALL_PREFIX=../opencv_install \
             -D INSTALL_C_EXAMPLES=ON \
@@ -48,8 +52,9 @@ VILSAM dependencies:
     make -j8
     make install
 
-  Update CMakeLists.txt in liovil_sam/src/CMakeLists.txt
-    Change opencv line to
+Update CMakeLists.txt in liovil_sam/src/CMakeLists.txt
+  Change opencv line to
+    
     find_package(OpenCV 3.3.1 REQUIRED HINTS <point_to_the_opencv_installation folder>)
 
 Similar dependencies
