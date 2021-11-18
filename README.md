@@ -33,7 +33,8 @@ VILSAM dependencies:
     git checkout 3.3.1 -b v3.3.1
     cd ..
 
-  Now build it
+Now build it
+
     mkdir opencv_build
     cd opencv_build
     mkdir ../opencv_install
