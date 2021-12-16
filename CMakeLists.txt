@@ -169,22 +169,22 @@ target_link_libraries(${PROJECT_NAME}_visual_kf ${catkin_LIBRARIES} ${OpenCV_LIB
 
 ############################## LiDAR mapping ##############################
 
-add_executable(${PROJECT_NAME}_lidarFeatureExtract src/lidar_mapping/lidar_feature_extract.cc)
-target_link_libraries(${PROJECT_NAME}_lidarFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+#add_executable(${PROJECT_NAME}_lidarFeatureExtract src/lidar_mapping/lidar_feature_extract.cc)
+#target_link_libraries(${PROJECT_NAME}_lidarFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 
-add_executable(${PROJECT_NAME}_lidarVioFeatureExtract src/lidar_mapping/lidar_vio_feature_extract.cc)
-target_link_libraries(${PROJECT_NAME}_lidarVioFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+#add_executable(${PROJECT_NAME}_lidarVioFeatureExtract src/lidar_mapping/lidar_vio_feature_extract.cc)
+#target_link_libraries(${PROJECT_NAME}_lidarVioFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 
-add_executable(${PROJECT_NAME}_lidarOdometry src/lidar_mapping/lidar_odometry.cc)
-target_link_libraries(${PROJECT_NAME}_lidarOdometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
+#add_executable(${PROJECT_NAME}_lidarOdometry src/lidar_mapping/lidar_odometry.cc)
+#target_link_libraries(${PROJECT_NAME}_lidarOdometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 
-add_executable(${PROJECT_NAME}_odometrySelect src/lidar_mapping/odometry_select.cc)
-target_link_libraries(${PROJECT_NAME}_odometrySelect ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} )
+#add_executable(${PROJECT_NAME}_odometrySelect src/lidar_mapping/odometry_select.cc)
+#target_link_libraries(${PROJECT_NAME}_odometrySelect ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} )
 
-add_executable(${PROJECT_NAME}_lidarMapping src/lidar_mapping/lidar_mapping.cc)
-target_link_libraries(${PROJECT_NAME}_lidarMapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} yaml-cpp)
+#add_executable(${PROJECT_NAME}_lidarMapping src/lidar_mapping/lidar_mapping.cc)
+#target_link_libraries(${PROJECT_NAME}_lidarMapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} yaml-cpp)
 
 ############################## Misc ##############################
 # IMU Preintegration
-add_executable(${PROJECT_NAME}_imu_ned2enu src/ned2enu.cpp)
-target_link_libraries(${PROJECT_NAME}_imu_ned2enu ${catkin_LIBRARIES})
+#add_executable(${PROJECT_NAME}_imu_ned2enu src/ned2enu.cpp)
+#target_link_libraries(${PROJECT_NAME}_imu_ned2enu ${catkin_LIBRARIES})
