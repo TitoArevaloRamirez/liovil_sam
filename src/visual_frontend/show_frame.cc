@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
     //nh.getParam("vio/frontend_topic", frontendTopic);
     nh.param<std::string>("vio/frontend_topic", frontendTopic, "/stereo_matches");
 
-    ROS_INFO("\033[1;32m----> Show Frame Started.\033[0m");
+    ROS_INFO("\033[1;36m\n >>> Show Frame Started <<< \033[0m");
   
   	// register callback
     message_filters::Subscriber<sensor_msgs::Image> left_sub(nh, "/mapping/left/scaled/image_rect_color", 100);

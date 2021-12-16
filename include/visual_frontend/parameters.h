@@ -97,6 +97,12 @@ namespace Params {
   extern std::string CLR_INVERT;
   extern std::string CLR_GREEN;
   extern std::string CLR_MAGENTA;
+
+  //Topics
+  extern std::string leftImg_topic;
+  extern std::string rightImg_topic;
+  extern std::string stereoMatches_topic;
+
 };
 
 #endif //__PARAMETERS_H__

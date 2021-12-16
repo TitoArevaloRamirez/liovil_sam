@@ -3,7 +3,10 @@
 
   <group ns="mapping" >
     <group ns="left" >
-      <node pkg="image_proc" type="image_proc" name="left_image_proc" />
+      <node pkg="image_proc" type="image_proc" name="left_image_proc">
+	    <remap from="camera_info" to="camera_info_usr" />
+      </node>
+
       <node pkg="nodelet" type="nodelet" args="standalone image_proc/resize"
 	    name="left_resize">
 	<param name="scale_height" value="0.5" />
@@ -17,7 +20,9 @@
 	</node>
     </group>
     <group ns="right" >
-      <node pkg="image_proc" type="image_proc" name="right_image_proc" output="screen" />
+      <node pkg="image_proc" type="image_proc" name="right_image_proc" output="screen" >
+	    <remap from="camera_info" to="camera_info_usr" />
+    </node>
       <node pkg="nodelet" type="nodelet" args="standalone image_proc/resize"
 	    name="right_resize">
 	<param name="scale_height" value="0.5" />
@@ -31,12 +36,15 @@
     </group>
   </group>
 
-
   <!-- frontend node -->
-  <arg name="frontend" default="v"/>
-  <node name="$(arg project)_visual_frontend" pkg="$(arg project)" type="$(arg project)_visual_frontend" cwd="node" output="screen" />
+  <arg name="visualFrontend_config" default = "$(find liovil_sam)/config/visual_frontend.yaml" />
+  <node name="$(arg project)_visual_frontend" pkg="$(arg project)" type="$(arg project)_visual_frontend" cwd="node" output="screen">
+        <rosparam command="load" file="$(arg visualFrontend_config)" />
+  </node>
 
-  <!-- visualization -->
+
+  <!-- visualization 
   <node name="$(arg project)_show_frame_node" pkg="$(arg project)" type="$(arg project)_show_frame_node" output="screen"/>
+  -->
 
 </launch>

@@ -212,7 +212,11 @@ public:
         subImu      = nh.subscribe<sensor_msgs::Imu>  (imuTopic,                   2000, &IMUPreintegration::imuHandler,      this, ros::TransportHints().tcpNoDelay());
         subOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry_incremental", 5,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
         //subOdometry = nh.subscribe<nav_msgs::Odometry>("/odom_camera", 300,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay()); //usr
-        subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
+        
+        //subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
+        //
+        //
+        //subStereo = nh.subscribe<nav_msgs::Odometry> ("liovil_sam_smart_smoother/odom_camera", 200, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
 
         pubImuOdometry = nh.advertise<nav_msgs::Odometry> (odomTopic+"_incremental", 2000);
 
@@ -443,7 +447,7 @@ public:
         graphFactors.add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key - 1), B(key), gtsam::imuBias::ConstantBias(),
                          gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegratorOpt_->deltaTij()) * noiseModelBetweenBias)));
         //add stereo factor
-        addStereoFactor(currentCorrectionTime); //usr
+        //addStereoFactor(currentCorrectionTime); //usr
         
         // add pose factor
         gtsam::Pose3 curPose = lidarPose.compose(lidar2Imu);
@@ -648,7 +652,7 @@ int main(int argc, char** argv)
 
     TransformFusion TF;
 
-    ROS_INFO("\033[1;32m----> IMU Preintegration Started.\033[0m");
+    ROS_INFO("\033[1;36m\n >>> IMU Preintegration Started <<< \033[0m");
     
     ros::MultiThreadedSpinner spinner(4);
     spinner.spin();

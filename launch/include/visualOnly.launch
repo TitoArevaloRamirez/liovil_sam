@@ -1,0 +1,11 @@
+<launch>
+  <arg name="project" default="liovil_sam"/>
+
+  <!-- frontend node -->
+  <arg name="visualFrontend_config" default = "$(find liovil_sam)/config/visual_frontend.yaml" />
+  <node name="$(arg project)_visual_frontend" pkg="$(arg project)" type="$(arg project)_visual_frontend" cwd="node" output="screen">
+        <rosparam command="load" file="$(arg visualFrontend_config)" />
+  </node>
+
+
+</launch>

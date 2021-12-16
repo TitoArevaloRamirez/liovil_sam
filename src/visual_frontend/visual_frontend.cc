@@ -29,29 +29,32 @@
 #include "visual_frontend/parameters.h"
 #include "visual_frontend/feature_operations.h"
 
-double frame_rate;
-double tolerance;
-double prev_left_time=0;
-double prev_right_time=0;
+#include <message_filters/subscriber.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <sensor_msgs/Image.h>
 
-std::string time_path = "time_frontend.txt";
-std::ofstream outFile_time(time_path);
+#include <mutex>
+
+using namespace sensor_msgs;
+using namespace message_filters;
+
+std::mutex mtx;
+
+//std::string time_path = "time_frontend.txt";
+//std::ofstream outFile_time(time_path);
 
 std::shared_ptr<VisualFrontend::StereoTracker> stereo_tracker;
+
+std::string leftImg_topic;
+std::string rightImg_topic;
+std::string stereoMatches_topic;
+
 
 void left_img_callback(const sensor_msgs::Image::ConstPtr& msg) {  
   
   std::shared_ptr<cv::Mat> img(new cv::Mat);
   *img = cv_bridge::toCvShare(msg,msg->encoding.c_str())->image.clone();
-  
-  double curr_left_time = msg->header.stamp.toSec();
-  if(prev_left_time != 0) {
-    if(curr_left_time - prev_left_time > (1.+tolerance)/frame_rate) {
-      std::cerr << "Time gap larger. Lost a left frame" << std::endl;
-    }
-  }
-  prev_left_time = curr_left_time;
-
   stereo_tracker->add_left_img(img,msg->header.stamp.toSec());
   
 }
@@ -60,81 +63,51 @@ void right_img_callback(const sensor_msgs::Image::ConstPtr& msg) {
   
   std::shared_ptr<cv::Mat> img(new cv::Mat);
   *img = cv_bridge::toCvShare(msg,msg->encoding.c_str())->image.clone();
-  
-  double curr_right_time = msg->header.stamp.toSec();
-  if(prev_right_time != 0) {
-    if(curr_right_time - prev_right_time > (1.+tolerance)/frame_rate) {
-      std::cerr << "Time gap larger. Lost a right frame" << std::endl;
-    }
-  }
-  prev_right_time = curr_right_time;
-
   stereo_tracker->add_right_img(img,msg->header.stamp.toSec());
   
 }
 
 void readInParams(ros::NodeHandle& nh) {
-  // camera
-  double stereo_fx, stereo_fy, stereo_cx, stereo_cy;
-  nh.getParam("vio/rescale_factor", Params::rescale_factor);
-  nh.getParam("vio/fx", stereo_fx);
-  nh.getParam("vio/fy", stereo_fy);
-  nh.getParam("vio/cx", stereo_cx);
-  nh.getParam("vio/cy", stereo_cy);
-  nh.getParam("vio/baseline", Params::right_cam_info.baseline);
-  Params::left_cam_info.fx = stereo_fx*Params::rescale_factor;
-  Params::left_cam_info.fy = stereo_fy*Params::rescale_factor;
-  Params::left_cam_info.cx = stereo_cx*Params::rescale_factor;
-  Params::left_cam_info.cy = stereo_cy*Params::rescale_factor;
-  Params::right_cam_info.fx = stereo_fx*Params::rescale_factor;
-  Params::right_cam_info.fy = stereo_fy*Params::rescale_factor;
-  Params::right_cam_info.cx = stereo_cx*Params::rescale_factor;
-  Params::right_cam_info.cy = stereo_cy*Params::rescale_factor;
 
-  /*Params::left_cam_info.fx = 1455.04525;//stereo_fx*Params::rescale_factor;
-  Params::left_cam_info.fy = 1454.96395;//stereo_fy*Params::rescale_factor;
-  Params::left_cam_info.cx = 1350.56713;//stereo_cx*Params::rescale_factor;
-  Params::left_cam_info.cy = 1111.26499;//stereo_cy*Params::rescale_factor;
-  Params::right_cam_info.fx = 1459.18569;//stereo_fx*Params::rescale_factor;
-  Params::right_cam_info.fy = 1459.80365;//stereo_fy*Params::rescale_factor;
-  Params::right_cam_info.cx = 1371.25784;//stereo_cx*Params::rescale_factor;
-  Params::right_cam_info.cy = 1124.82893;//stereo_cy*Params::rescale_factor;*/
   // corner detector
   double numCorner, addlCorners; 
-  nh.getParam("vio/corner_number", numCorner);
-  Params::num_corners = (unsigned)numCorner;
-  nh.getParam("vio/addl_corners", addlCorners);
-  Params::addl_corners = (unsigned)addlCorners;
-  nh.getParam("vio/percent_matches", Params::percent_matches);
-  nh.getParam("vio/percent_min_corners", Params::percent_min_corners);
   double mmatches;
-  nh.getParam("vio/max_matches",mmatches);
+
+  nh.getParam("corner_number", numCorner);
+  Params::num_corners = (unsigned)numCorner;
+  nh.getParam("addl_corners", addlCorners);
+  Params::addl_corners = (unsigned)addlCorners;
+
+  nh.getParam("percent_matches", Params::percent_matches);
+  nh.getParam("percent_min_corners", Params::percent_min_corners);
+  nh.getParam("max_matches",mmatches);
   Params::max_matches = (unsigned)mmatches;
-  nh.getParam("vio/feature_extraction_boundary", Params::feature_extraction_boundary);
-  nh.getParam("vio/feature_search_boundary", Params::feature_search_boundary);
-  nh.getParam("vio/min_dist_from_camera", Params::min_dist_from_camera);
-  nh.getParam("vio/max_disparity", Params::max_disparity);
-  nh.getParam("vio/equalize_histogram", Params::equalize_histogram);
-  nh.getParam("vio/refine_corners_after_corner_extraction", Params::refine_corners_after_corner_extraction);
-  nh.getParam("vio/refine_corners_after_optical_flow", Params::refine_corners_after_optical_flow);
-  nh.getParam("vio/max_disparity_alignment_threshold", Params::max_disparity_alignment_threshold);
-  nh.getParam("vio/landmark_search_radius", Params::landmark_search_radius);
+  nh.getParam("feature_extraction_boundary", Params::feature_extraction_boundary);
+  nh.getParam("feature_search_boundary", Params::feature_search_boundary);
+  nh.getParam("min_dist_from_camera", Params::min_dist_from_camera);
+  nh.getParam("max_disparity", Params::max_disparity);
+  nh.getParam("equalize_histogram", Params::equalize_histogram);
+  nh.getParam("refine_corners_after_corner_extraction", Params::refine_corners_after_corner_extraction);
+  nh.getParam("refine_corners_after_optical_flow", Params::refine_corners_after_optical_flow);
+  nh.getParam("max_disparity_alignment_threshold", Params::max_disparity_alignment_threshold);
+  nh.getParam("landmark_search_radius", Params::landmark_search_radius);
+
   double patch_numC, patch_numR, reExtractPatchNum;
-  nh.getParam("vio/patch_num_c", patch_numC);
-  nh.getParam("vio/patch_num_r", patch_numR);
-  nh.getParam("vio/reextract_patch_number", reExtractPatchNum);
+  nh.getParam("patch_num_c", patch_numC);
+  nh.getParam("patch_num_r", patch_numR);
+  nh.getParam("reextract_patch_number", reExtractPatchNum);
   Params::patch_num_r = (int)patch_numR;
   Params::patch_num_c = (int)patch_numC;
   Params::reextract_patch_num = (int)reExtractPatchNum;
-  nh.getParam("vio/matcher_distance_threshold", Params::matcher_dist_threshold);
+  nh.getParam("matcher_distance_threshold", Params::matcher_dist_threshold);
   //methods
-  nh.getParam("vio/old_hybrid",Params::old_hybrid);
-  nh.getParam("vio/custom_matcher",Params::custom_matcher);
+  nh.getParam("old_hybrid",Params::old_hybrid);
+  nh.getParam("custom_matcher",Params::custom_matcher);
   
   // descriptor
-  nh.getParam("vio/descriptor_distance_both_ways", Params::descriptor_distance_both_ways);
+  nh.getParam("descriptor_distance_both_ways", Params::descriptor_distance_both_ways);
   std::string descriptor, tracking_method;
-  nh.getParam("vio/descriptor", descriptor);
+  nh.getParam("descriptor", descriptor);
   if (descriptor == "ORB")
     Params::descriptor_type = VisualFrontend::ORB;
   else if (descriptor == "SURF")
@@ -142,80 +115,104 @@ void readInParams(ros::NodeHandle& nh) {
   else if (descriptor == "SIFT")
     Params::descriptor_type = VisualFrontend::SIFT;
   // tracking
-  nh.getParam("vio/tracking_method", tracking_method);
+  nh.getParam("tracking_method", tracking_method);
   if (tracking_method == "FEATURE_BASED")
     Params::tracking = Params::FEATURE_BASED;
   else if (tracking_method == "OPTICALFLOW_BASED")
     Params::tracking = Params::OPTICALFLOW_BASED;
   else if (tracking_method == "HYBRID_BASED")
     Params::tracking = Params::HYBRID_BASED;
-  nh.getParam("vio/hybrid_percent_tracked_corners",Params::hybrid_percent_tracked_corners);
+  nh.getParam("hybrid_percent_tracked_corners",Params::hybrid_percent_tracked_corners);
   // LKT based
   double stereo_win, f2f_win;
-  nh.getParam("vio/stereo_tracking_search_window", stereo_win);
-  nh.getParam("vio/frame2frame_tracking_search_window", f2f_win);
+  nh.getParam("stereo_tracking_search_window", stereo_win);
+  nh.getParam("frame2frame_tracking_search_window", f2f_win);
   Params::stereo_tracking_search_window = cv::Size(stereo_win, stereo_win);
   Params::frame2frame_tracking_search_window = cv::Size(f2f_win, f2f_win);
-  nh.getParam("vio/percent_border",Params::percent_border);
+  nh.getParam("percent_border",Params::percent_border);
   // display and output
-  nh.getParam("vio/display_tracking_ui", Params::display_tracking_ui);
-  nh.getParam("vio/write_matches_to_file", Params::write_matches_to_file);
-  nh.getParam("vio/display_verbose_output", Params::display_verbose_output);
-  /*
-  // printParams
-  std::cout << Params::percent_matches << "\n" << Params::percent_min_corners << "\n" 
-            << Params::max_disparity << "\n" << Params::min_dist_from_camera << "\n"
-            << Params::num_corners << "\n" << Params::feature_extraction_boundary << "\n";
-  */
+  nh.getParam("display_tracking_ui", Params::display_tracking_ui);
+  nh.getParam("write_matches_to_file", Params::write_matches_to_file);
+  nh.getParam("display_verbose_output", Params::display_verbose_output);
+
+  //Topics 
+  nh.getParam("leftImg_topic", leftImg_topic);
+  nh.getParam("rightImg_topic", rightImg_topic);
+  nh.getParam("stereoMatches_topic", stereoMatches_topic);
+}
+
+void left_right_callback(const ImageConstPtr& left_msg, const ImageConstPtr& right_msg)
+{
+  //std::lock_guard<std::mutex> lock(mtx);
+
+  std::shared_ptr<cv::Mat> left_img(new cv::Mat);
+  *left_img = cv_bridge::toCvShare(left_msg,left_msg->encoding.c_str())->image.clone();
+  stereo_tracker->add_left_img(left_img,left_msg->header.stamp.toSec());
+  //stereo_tracker->just_arrived_left = std::make_shared<Frame>(left_img,left_msg->header.stamp.toSec(),VisualFrontend::LEFT);
+
+  std::shared_ptr<cv::Mat> right_img(new cv::Mat);
+  *right_img = cv_bridge::toCvShare(right_msg,right_msg->encoding.c_str())->image.clone();
+  stereo_tracker->add_right_img(right_img,right_msg->header.stamp.toSec());
+  //stereo_tracker->just_arrived_right = std::make_shared<Frame>(right_img,right_msg->header.stamp.toSec(),VisualFrontend::RIGHT);
+  // Solve all of perception here...
 }
 
 int main(int argc, char **argv) {
 
   ros::init(argc,argv,"visual_frontend");
 
-  ros::NodeHandle nh;
+  ros::NodeHandle nh("~");
   readInParams(nh);
 
+  ros::AsyncSpinner spinner(4);
+
+  
+
   stereo_tracker.reset(new VisualFrontend::StereoTracker());
-  stereo_tracker->write_to_file = false;
-  stereo_tracker->visualize = true;
-  frame_rate = 10; //hz
-  tolerance = 0.3; //30 percent
+  stereo_tracker->visualize = false;
    
   //add subscribers to left image, pointcloud and imu data
-  ros::Subscriber left_sub = nh.subscribe("/mapping/left/scaled/image_rect_color",
-					  10,left_img_callback);
-  ros::Subscriber right_sub = nh.subscribe("/mapping/right/scaled/image_rect_color",
-					   10,right_img_callback);
+  //ros::Subscriber left_sub = nh.subscribe(leftImg_topic, 30, left_img_callback);
+  //ros::Subscriber right_sub = nh.subscribe(rightImg_topic, 30, right_img_callback);
+  
+  message_filters::Subscriber<Image> leftImg_sub(nh, leftImg_topic, 1);
+  message_filters::Subscriber<Image> rightImg_sub(nh, rightImg_topic, 1);
+
+  typedef sync_policies::ApproximateTime<Image, Image> MySyncPolicy;
+  // ApproximateTime takes a queue size as its constructor argument, hence MySyncPolicy(10)
+  Synchronizer<MySyncPolicy> sync(MySyncPolicy(3), leftImg_sub, rightImg_sub);
+  sync.registerCallback(boost::bind(&left_right_callback, _1, _2));
+
   // publisher
-  ros::Publisher stereo_matches_pub =
-    nh.advertise<liovil_sam::StereoFeatureMatches>("/stereo_matches",1000);
+  ros::Publisher stereo_matches_pub = nh.advertise<liovil_sam::StereoFeatureMatches>(stereoMatches_topic,10);
 
-  ROS_INFO("\033[1;32m----> Visual Fronten Started.\033[0m");
+  ROS_INFO("\033[1;36m \n >>> Visual Fronten Started <<< \033[0m");
+  std::cout<< "\033[0;36m \t Subscribed to (left image): " << leftImg_topic << "\033[0m" << std::endl;
+  std::cout<< "\033[0;36m \t Subscribed to (right image): " << rightImg_topic << "\033[0m" << std::endl;
+  std::cout<< "\033[0;36m \t Publish to: " << stereoMatches_topic << "\033[0m" << std::endl;
 
-  unsigned published_id = 0;
-
-  Eigen::Matrix4d T__k__0(Eigen::Matrix4d::Identity());
 
   std::set<unsigned> prev_feature_ids;
+  std::shared_ptr<VisualFrontend::FMatches> matches;
 
-  clock_t start;
+  spinner.start();
+  //clock_t start;
   while(ros::ok()) {
 
-    auto start_clock = std::chrono::high_resolution_clock::now();
+    //auto start_clock = std::chrono::high_resolution_clock::now();
 
-    start = clock();
+    //start = clock();
     stereo_tracker->track();
     
     //if stereo matches were generated
     if(stereo_tracker->stereo_feature_matches) {
     
-      std::shared_ptr<VisualFrontend::FMatches> matches = stereo_tracker->stereo_feature_matches;
+       matches = stereo_tracker->stereo_feature_matches;
       //publish stereo messages
       if(matches->matches.size() > 0) {
         //publish the matched features
-        liovil_sam::StereoFeatureMatches matches_msg;
         //setting the left frame timestamp
+        liovil_sam::StereoFeatureMatches matches_msg;
         matches_msg.header.stamp = ros::Time(matches->frame1->tstamp); 
         matches_msg.frame_id = matches->frame1->frameid;
         matches_msg.num_matches = matches->matches.size();
@@ -260,23 +257,23 @@ int main(int argc, char **argv) {
         prev_feature_ids = feature_ids;
 
         //after we consumed the stereo_feature_matches, delete it
+        matches.reset();
         stereo_tracker->stereo_feature_matches.reset();
+        stereo_tracker->tracking_feature_matches.reset();
 
-	auto end_clock = std::chrono::high_resolution_clock::now();
-	std::cout << "Total frontend one pair time:" <<
-	  VisualFrontend::duration(start_clock,end_clock)
-		  << "ms" << std::endl;
+	    //auto end_clock = std::chrono::high_resolution_clock::now();
+	    //std::cout << "Total frontend one pair time:" << VisualFrontend::duration(start_clock,end_clock) << "ms" << std::endl;
 
-        float diff = -((float)start-(float)clock())/CLOCKS_PER_SEC;
-        std::cout << "Total frontend one pair time: " << diff*1.0e3 << "ms\n\n";
+        //float diff = -((float)start-(float)clock())/CLOCKS_PER_SEC;
+        //std::cout << "Total frontend one pair time: " << diff*1.0e3 << "ms\n\n";
 	
-        outFile_time << diff << "\n";
-        outFile_time.close();
-        outFile_time.open(time_path, std::ios_base::app);
+        //outFile_time << diff << "\n";
+        //outFile_time.close();
+        //outFile_time.open(time_path, std::ios_base::app);
       }
     }
-    ros::spinOnce();
+    //ros::spinOnce();
   }
-  
+  ros::waitForShutdown();
   return 0;
 }

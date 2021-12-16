@@ -264,7 +264,7 @@ int main(int argc, char** argv)
 
     FeatureExtraction FE;
 
-    ROS_INFO("\033[1;32m----> Feature Extraction Started.\033[0m");
+    ROS_INFO("\033[1;36m\n >>> Feature Extraction Started <<< \033[0m");
    
     ros::spin();
 

@@ -29,8 +29,8 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   #image_geometry
 )
-
-find_package(OpenCV 3.3.1 REQUIRED HINTS /home/frc-ag/vilsam_dependencies/opencv/opencv_install)  #visual frontend
+find_package(OpenCV 3.3.1 REQUIRED HINTS ~/Code/Opencv_3.3.1/opencv_install)  #visual frontend
+#find_package(OpenCV 3.3.1 REQUIRED)  #visual frontend
 find_package(OpenMP REQUIRED)
 find_package(PCL REQUIRED QUIET)
 #find_package(OpenCV REQUIRED QUIET) #liosam original
@@ -107,7 +107,7 @@ set(SOURCES  include/vio/FixedLagSmoother.h
              include/vio/anms.h
 	         include/vio/Header.h
 	         include/vio/gms_matcher.h)
-
+#
 ###########
 ## Build ##
 ###########
@@ -145,12 +145,13 @@ add_executable(${PROJECT_NAME}_visual_frontend
   src/visual_frontend/parameters.cc
   src/visual_frontend/optimizer.cc
   src/visual_frontend/reprojection_fns.cc
-  src/visual_frontend/visual_frontend.cc)
+  src/visual_frontend/visual_frontend_class.cc)
 
 add_dependencies(${PROJECT_NAME}_visual_frontend ${catkin_EXPORTED_TARGETS})
 add_dependencies(${PROJECT_NAME}_visual_frontend ${PROJECT_NAME}_generate_messages_cpp)
 
-target_link_libraries(${PROJECT_NAME}_visual_frontend ${OpenCV_LIBS} ${catkin_LIBRARIES})
+target_compile_options(${PROJECT_NAME}_visual_frontend PRIVATE ${OpenMP_CXX_FLAGS})
+target_link_libraries(${PROJECT_NAME}_visual_frontend ${OpenCV_LIBS} ${catkin_LIBRARIES} ${OpenMP_CXX_FLAGS})
 
 add_executable(${PROJECT_NAME}_show_frame_node src/visual_frontend/show_frame.cc)
 add_dependencies(${PROJECT_NAME}_show_frame_node ${PROJECT_NAME}_generate_messages_cpp)
@@ -167,24 +168,7 @@ add_executable(${PROJECT_NAME}_visual_kf src/vio/show_kf.cpp ${SOURCES})
 add_dependencies(${PROJECT_NAME}_visual_kf ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 target_link_libraries(${PROJECT_NAME}_visual_kf ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
-############################## LiDAR mapping ##############################
-
-add_executable(${PROJECT_NAME}_lidarFeatureExtract src/lidar_mapping/lidar_feature_extract.cc)
-target_link_libraries(${PROJECT_NAME}_lidarFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
-
-add_executable(${PROJECT_NAME}_lidarVioFeatureExtract src/lidar_mapping/lidar_vio_feature_extract.cc)
-target_link_libraries(${PROJECT_NAME}_lidarVioFeatureExtract ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
-
-add_executable(${PROJECT_NAME}_lidarOdometry src/lidar_mapping/lidar_odometry.cc)
-target_link_libraries(${PROJECT_NAME}_lidarOdometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS})
-
-add_executable(${PROJECT_NAME}_odometrySelect src/lidar_mapping/odometry_select.cc)
-target_link_libraries(${PROJECT_NAME}_odometrySelect ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} )
-
-add_executable(${PROJECT_NAME}_lidarMapping src/lidar_mapping/lidar_mapping.cc)
-target_link_libraries(${PROJECT_NAME}_lidarMapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} yaml-cpp)
-
 ############################## Misc ##############################
 # IMU Preintegration
-add_executable(${PROJECT_NAME}_imu_ned2enu src/ned2enu.cpp)
-target_link_libraries(${PROJECT_NAME}_imu_ned2enu ${catkin_LIBRARIES})
+#add_executable(${PROJECT_NAME}_imu_ned2enu src/ned2enu.cpp)
+#target_link_libraries(${PROJECT_NAME}_imu_ned2enu ${catkin_LIBRARIES})

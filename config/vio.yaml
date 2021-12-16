@@ -1,0 +1,83 @@
+
+##################################################
+#             Visual Inertial Odometry (VIO)     
+##################################################
+#subscribers
+imu_topic: "/xsens/imu/data"
+
+frontend_topic: "/stereo_matches"
+#lidar_topic: "/lio_sam/mapping/odometry_incremental" #usr
+lidar_topic: "/lio_sam/mapping/odometry" #usr
+odom_imu_rate_topic: "/odom_imu"
+
+#publisher
+odom_camera_rate_topic: "odom_camera"
+camera_pose_visual_topic: "odom_camera_visual"
+camera_path_publish_topic: "odom_camera_path"
+landmark_topic: "landmarks"
+#Drone
+fx: 719.4674
+fy: 719.4674
+cx: 682.85536
+cy: 555.98205
+#indoor
+#fx: 730.445095428
+#fy: 730.445095428
+#cx: 331.480882645
+#cy: 265.039070129
+baseline: 0.247279067378212
+
+#FY
+quat_I_LC: [0.503096384820381, -0.49276446989981, 0.500896743794452, -0.501684436262218]
+posi_I_LC: [0.0870551272380779, -0.107604788194452, 0.0180391607070435]
+
+# set extrinsic IMU and Lidar
+T_I_Lidar: [1, 0, 0, -0.011356,
+            0, -1, 0,  -0.002352,
+            0,  0, -1, -0.08105,
+            0,  0, 0, 1]
+
+# whether use lidar feedback
+lidar_feedback: true # true
+time_interval_to_use_lidar_feedback: 0.1 #0.001
+
+# set noise
+camera_sigma: 6 # 6 for FEATURE_BASE, 4 orig
+imu_gyro_bias_noise_sigma: 0.1 #0.01 # rad
+imu_acce_bias_noise_sigma: 0.005 #0.005 # m
+
+lidar_feedback_sigma_trans: 0.07
+lidar_feedback_sigma_orien: 0.05
+
+lag_to_use: 15
+bound_optimizer: true
+use_isam2: false #not implemented
+
+landmark_distance_threshold: 200 #200
+outlier_rejection_threshold: 5 # 5 8
+
+use_ceres_default: false
+max_iteration: 4
+
+absolute_error_toleration: 0.001
+relative_error_toleration: 0.001
+lambda_upper_bound: 1000
+
+robust_feature_ratio: 0.1
+number_frame_tracked: 4 #4
+triangulation_landmark_distance_threshold: 200 #200
+triangulation_outlier_rejection_threshold: 6 # 6 8
+
+state_pose_trans_noise_sigma: 0.1 # 0.01 // intial position
+state_pose_orien_noise_sigma: 0.1321 # 0.1321 # 0.02
+state_velocity_noise_sigma: 0.0001 # 0.005 // initial velocity
+
+accelerameter_noise_cov: [0.0004, 0, 0, 0, 0.0004, 0, 0, 0, 0.0004]
+gyroscope_noise_cov:  [0.0004363323129985824, 0, 0, 0, 0.0004363323129985824, 0, 0, 0, 0.0004363323129985824]
+accelerameter_bias_cov: [0.0002, 0, 0, 0, 0.0002, 0, 0, 0, 0.0002]
+gyroscope_bias_cov: [0.0003, 0, 0, 0, 0.0003, 0, 0, 0, 0.0003]
+
+integration_cov_sigma2: 0.0000001
+bias_accelermeter_intgration_sigma2: 0.0001
+
+

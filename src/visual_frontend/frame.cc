@@ -76,17 +76,17 @@ namespace VisualFrontend {
   }
 
   Frame::~Frame() {
-
     //iterate through the features_map datastructure and clear all the
     //descriptors as they are no longer valid
     for(auto iter=features_map.begin(); iter != features_map.end(); ++iter) {
       iter->second->descriptor.desc.release();
     }
+
     
-    if((type == LEFT && !tracked) || (type == RIGHT && !stereo_processed)) {
-      std::cerr << Params::ERR_START << " Frame " << str_frameid <<
-	" dropped " << Params::ERR_END << std::endl;
-    }
+    //if((type == LEFT && !tracked) || (type == RIGHT && !stereo_processed)) {
+    //  std::cerr << Params::ERR_START << " Frame " << str_frameid <<
+	//" dropped " << Params::ERR_END << std::endl;
+    //}
   }
 
   void Frame::compute_descriptors(bool reextract) {
@@ -105,8 +105,7 @@ namespace VisualFrontend {
     //if they are extracted already but not sufficient 
     else if(features_map.size() < size_t(Params::num_corners*Params::percent_min_corners) || reextract) {
       //reextract them
-      std::cout << Params::CLR_GREEN << Params::CLR_INVERT <<
-	" Re-extracting corners " << Params::CLR_RESET << std::endl;
+      //std::cout << Params::CLR_GREEN << Params::CLR_INVERT << " Re-extracting corners " << Params::CLR_RESET << std::endl;
       corners = _extract_corners(Params::num_corners+Params::addl_corners);
       //fill the features_map
       _fill_features_map(corners);
@@ -130,11 +129,12 @@ namespace VisualFrontend {
     FeatureDescriptor::get_instance().compute(img,keypoints,descriptors);
 
     auto finish = std::chrono::high_resolution_clock::now();
-    std::cout << "Computed " << keypoints.size() << " descriptors in " <<
-      duration(start,finish) << " ms" << std::endl;
+    //std::cout << "Computed " << keypoints.size() << " descriptors in " <<
+      //duration(start,finish) << " ms" << std::endl;
     
     //now fill the descriptors into the features object
     unsigned counter = 0;
+
     for(auto iter = keypoints.begin(); iter != keypoints.end(); ++iter) {
       // find the iterator
       auto bounds = features_map.equal_range(iter->pt);
@@ -209,8 +209,7 @@ namespace VisualFrontend {
       tracked = true;
     } 
     else {
-      std::cerr << Params::ERR_START << "Tracking is neither stereo not frame2frame!!!"
-		    << Params::ERR_END << std::endl;
+      std::cerr << Params::ERR_START << "Tracking is neither stereo not frame2frame!!!" << Params::ERR_END << std::endl;
       exit(-1);
     }
     
@@ -221,7 +220,7 @@ namespace VisualFrontend {
     else if(Params::tracking == Params::HYBRID_BASED)
       _hybrid_tracking(nxt, *fmatches, tracking_type);
 
-    std::cout << *this << *nxt << std::endl;
+    //std::cout << *this << *nxt << std::endl;
     
     //after stereo tracking remove the features which are not tracked
     //so that they can be recomputed in optical flow if needed
@@ -230,7 +229,7 @@ namespace VisualFrontend {
       nxt->_remove_untracked_features(*fmatches);
     }
 
-    std::cout << *this << *nxt << std::endl;
+    //std::cout << *this << *nxt << std::endl;
 
     //update the landmark database with the tracked features
     //LandmarkManager::get_instance().update_landmarks(shared_from_this());
@@ -248,19 +247,19 @@ namespace VisualFrontend {
 
     auto finish = std::chrono::high_resolution_clock::now();
 
-    if(Params::tracking == Params::FEATURE_BASED)
-      std::cout << " Feature_based:(" << FeatureDescriptor::get_instance().str_desc << ")";
-    else if (Params::tracking == Params::OPTICALFLOW_BASED)
-      std::cout << " Opticalflow:";
-    else if (Params::tracking == Params::HYBRID_BASED)
-      std::cout << " Hybrid_based:";
+    //if(Params::tracking == Params::FEATURE_BASED)
+    //  std::cout << " Feature_based:(" << FeatureDescriptor::get_instance().str_desc << ")";
+    //else if (Params::tracking == Params::OPTICALFLOW_BASED)
+    //  std::cout << " Opticalflow:";
+    //else if (Params::tracking == Params::HYBRID_BASED)
+    //  std::cout << " Hybrid_based:";
     
-    std::cout << (tracking_type == STEREO?"      Stereo: ":" Frame2frame: ") << 
-      std::setw(5) << duration(start,finish) << "ms ";
-    std::cout << "<" << str_frameid << nxt->str_frameid << "> "; 
-    std::cout << " [" << std::setw(4) << fmatches->matches.size() << " matches] ";
-    std::cout << " [" << std::setw(4) << std::fixed << std::setprecision(2) 
-              << Params::rescale_factor << " x]" << std::endl;
+    //std::cout << (tracking_type == STEREO?"      Stereo: ":" Frame2frame: ") << 
+    //  std::setw(5) << duration(start,finish) << "ms ";
+    //std::cout << "<" << str_frameid << nxt->str_frameid << "> "; 
+    //std::cout << " [" << std::setw(4) << fmatches->matches.size() << " matches] ";
+    //std::cout << " [" << std::setw(4) << std::fixed << std::setprecision(2) 
+              //<< Params::rescale_factor << " x]" << std::endl;
 
     return fmatches;
   }  
@@ -316,8 +315,8 @@ namespace VisualFrontend {
 			    0.04); //k
 
     auto finish = std::chrono::high_resolution_clock::now();
-    std::cout << "Computed " << corners.size() << " corners " <<
-      duration(start,finish) << " ms for " << str_frameid << std::endl;
+    //std::cout << "Computed " << corners.size() << " corners " <<
+      //duration(start,finish) << " ms for " << str_frameid << std::endl;
 
     //refine the corners
     if(Params::refine_corners_after_corner_extraction)
@@ -379,6 +378,7 @@ namespace VisualFrontend {
        	gray = img;
       else 
 	cv::cvtColor(img,gray,CV_RGB2GRAY);
+	//cv::cvtColor(img,gray,cv::COLOR_BGR2GRAY); // usr opencv4
     }
   }
   
@@ -392,8 +392,8 @@ namespace VisualFrontend {
     //goodfeaturestotrack method should have already checked for that)
     if(features_map.size() == 0) {
       for(auto iter = corners.begin(); iter != corners.end(); ++iter) {
-	features_map[*iter] = std::make_shared<Feature>(*iter);
-	counter++;
+	      features_map[*iter] = std::make_shared<Feature>(*iter);
+	      counter++;
       }
 
     } else {
@@ -432,13 +432,13 @@ namespace VisualFrontend {
     }
   }
 
-  void Frame::_print_features_map() {
-    std::cout << "\nFrame:" << str_frameid << std::endl;
-    for(auto iter = features_map.begin(); iter != features_map.end(); ++iter) {
-      std::cout << *(iter->second) << std::endl;
-    }
-    std::cout << std::endl;
-  }
+  //void Frame::_print_features_map() {
+  //  std::cout << "\nFrame:" << str_frameid << std::endl;
+  //  for(auto iter = features_map.begin(); iter != features_map.end(); ++iter) {
+  //    std::cout << *(iter->second) << std::endl;
+  //  }
+  //  std::cout << std::endl;
+  //}
 
   void Frame::_mark_tracked_features(std::shared_ptr<Frame> nxt,
 				     std::vector<unsigned> &tracked_ids,
@@ -474,7 +474,8 @@ namespace VisualFrontend {
 
 	//add match
 	//std::shared_ptr<FMatch> m = std::make_shared<FMatch>();
-	std::shared_ptr<FMatch> m(new FMatch);
+	
+    std::shared_ptr<FMatch> m(new FMatch); //Commented by usr3
 	m->f1 = index_map[feature_id];
 	m->f2 = iter->second;
 	m->desc_dist = m->f1->descriptor.distance;
@@ -590,7 +591,7 @@ namespace VisualFrontend {
     else 
       search_window = Params::stereo_tracking_search_window;
 
-    nxt->_to_gray();
+    //nxt->_to_gray();  //commented by usr
     cv::calcOpticalFlowPyrLK(gray, nxt->gray, 
 			     _corners(),
 			     tracked_corners,
@@ -617,88 +618,88 @@ namespace VisualFrontend {
     std::vector<bool> untracked_features;
     unsigned untracked_counter = 0;
     
-    for(auto status_iter = status.begin(); status_iter != status.end();
-	++status_iter, ++tracked_corners_iter, ++fmap_iter,++untracked_counter) {      
+    for(auto status_iter = status.begin(); status_iter != status.end(); ++status_iter, ++tracked_corners_iter, ++fmap_iter,++untracked_counter) {      
       //std::cout << static_cast<unsigned>(*status_iter) << std::endl; 
       //if the feature is tracked successfully
       untracked_features.push_back(false);
       if(*status_iter == 1) {
 
-	double border = Params::percent_border;
-	//filter the points which lie on the boundary of the image
-	if(tracked_corners_iter->x > gray.cols * (1-border) ||
-	   tracked_corners_iter->x < gray.cols * border ||
-	   tracked_corners_iter->y > gray.rows * (1-border) ||
-	   tracked_corners_iter->y < gray.rows * border) {
-	  untracked_features[untracked_counter] = true;
-	  continue;
-	}
-
-	//filter the points which are beyond the y threshold
-	if(fabs(fmap_iter->second->lpix.y - tracked_corners_iter->y) >
-	   (float)Params::max_disparity_alignment_threshold) {
-	  untracked_features[untracked_counter] = true;
-	  continue;
-	}
-	
-        std::shared_ptr<FMatch> fmatch(new FMatch);
-        fmatch->f1 = fmap_iter->second;
-        fmatch->f2 = std::shared_ptr<Feature>(new Feature);
-        fmatch->f2->id = fmatch->f1->id;
-        fmatch->f2->lpix = *tracked_corners_iter;
-
-	
-        if(tracking_type == STEREO) {
-          //fill in the disparity and depth measurements
-          //TODO: shouldn't this be the other way round (rightx - leftx)?
-          double disparity = fmap_iter->first.x - tracked_corners_iter->x;
-
-          double row_diff = fabs(tracked_corners_iter->y - fmap_iter->first.y);
-          //if disparity is negative or difference 
-          if(disparity < 0 || row_diff > Params::max_disparity_alignment_threshold) {
-            //do not add to the feature matches list, just continue
+	  double border = Params::percent_border;
+	  //filter the points which lie on the boundary of the image
+	  if(tracked_corners_iter->x > gray.cols * (1-border) ||
+	     tracked_corners_iter->x < gray.cols * border ||
+	     tracked_corners_iter->y > gray.rows * (1-border) ||
+	     tracked_corners_iter->y < gray.rows * border) {
 	    untracked_features[untracked_counter] = true;
-            continue;
-	  } else {
-            fmap_iter->second->disparity = disparity;
-            fmap_iter->second->depth = Params::right_cam_info.baseline/disparity;
-          }
-        } else if(tracking_type == FRAME2FRAME) {
-          //fill features_map of the next frame with the tracked corners
-          nxt->features_map[*tracked_corners_iter] = fmatch->f2;
-	}
+	    continue;
+	  }
 
-	//if the match is close to the previous match, ignore the weaker match
-	int fmatch_last_idx = fmatches.matches.size() - 1;
-	if(fmatch_last_idx >= 0) {
-	  auto prev_fmatch = fmatches.matches[fmatch_last_idx];
-	  auto diff = prev_fmatch->f1->lpix - fmatch->f1->lpix;
-	  //std::cout << "Distance between the previous and current matches: x:" <<
-	  //  diff.x << " y:" << diff.y << std::endl;
-	  //std::cout << "Boundary:" << Params::feature_search_boundary << std::endl;
-	  if(fabs(diff.x) < Params::feature_search_boundary &&
-	     fabs(diff.y) < Params::feature_search_boundary) {
+	  //filter the points which are beyond the y threshold
+	  if(fabs(fmap_iter->second->lpix.y - tracked_corners_iter->y) > (float)Params::max_disparity_alignment_threshold) {
+	    untracked_features[untracked_counter] = true;
+	    continue;
+	  }
+	  
+      std::shared_ptr<FMatch> fmatch(new FMatch); //Commented by usr
+      fmatch->f1 = fmap_iter->second;
+      fmatch->f2 = std::shared_ptr<Feature>(new Feature); //Commented by usr
+      fmatch->f2->id = fmatch->f1->id;
+      fmatch->f2->lpix = *tracked_corners_iter;
 
-	    //ignore one of them
-	    if(prev_fmatch->f1->descriptor.distance < fmatch->f1->descriptor.distance) {
-	      //previous match is stronger, lets ignore the current one
+	  
+      if(tracking_type == STEREO) {
+        //fill in the disparity and depth measurements
+        //TODO: shouldn't this be the other way round (rightx - leftx)?
+        double disparity = fmap_iter->first.x - tracked_corners_iter->x;
+
+        double row_diff = fabs(tracked_corners_iter->y - fmap_iter->first.y);
+        //if disparity is negative or difference 
+        if(disparity < 0 || row_diff > Params::max_disparity_alignment_threshold) {
+          //do not add to the feature matches list, just continue
 	      untracked_features[untracked_counter] = true;
-	      continue;
+          continue;
+	    } 
+        else{
+          fmap_iter->second->disparity = disparity;
+          fmap_iter->second->depth = Params::right_cam_info.baseline/disparity;
+        }
+      }
+      else if(tracking_type == FRAME2FRAME) {
+            //fill features_map of the next frame with the tracked corners
+            nxt->features_map[*tracked_corners_iter] = fmatch->f2;
+	  }
+
+	  //if the match is close to the previous match, ignore the weaker match
+	  int fmatch_last_idx = fmatches.matches.size() - 1;
+	  if(fmatch_last_idx >= 0) {
+	    auto prev_fmatch = fmatches.matches[fmatch_last_idx];
+	    auto diff = prev_fmatch->f1->lpix - fmatch->f1->lpix;
+	    //std::cout << "Distance between the previous and current matches: x:" <<
+	    //  diff.x << " y:" << diff.y << std::endl;
+	    //std::cout << "Boundary:" << Params::feature_search_boundary << std::endl;
+	    if(fabs(diff.x) < Params::feature_search_boundary &&
+	       fabs(diff.y) < Params::feature_search_boundary) {
+
+	      //ignore one of them
+	      if(prev_fmatch->f1->descriptor.distance < fmatch->f1->descriptor.distance) {
+	        //previous match is stronger, lets ignore the current one
+	        untracked_features[untracked_counter] = true;
+	        continue;
+	      } else {
+	        //replace the previous match with the current match
+	        prev_fmatch = fmatch;
+	        untracked_features[untracked_counter] = true;
+	      }
 	    } else {
-	      //replace the previous match with the current match
-	      prev_fmatch = fmatch;
-	      untracked_features[untracked_counter] = true;
-	    }
+	      //the previous match is not close to the current match, lets add it to the matches
+	      fmatches.matches.push_back(fmatch);
+	    } 
 	  } else {
 	    //the previous match is not close to the current match, lets add it to the matches
 	    fmatches.matches.push_back(fmatch);
-	  } 
-	} else {
-	  //the previous match is not close to the current match, lets add it to the matches
-	  fmatches.matches.push_back(fmatch);
-	}
-      }
+	  }
     }
+}
 
     //iterate through the features_map and delete the features which are not tracked
     fmap_iter = features_map.begin();
@@ -721,45 +722,41 @@ namespace VisualFrontend {
       //if the number of matches is lesser than the threshold. find more (new) corners      
       if(num_features_tracked < (Params::num_corners * Params::percent_min_corners)) {
         //find more corners
-	std::cout << Params::CLR_GREEN << Params::CLR_INVERT <<
-	  " Re-extracting corners " << Params::CLR_RESET << std::endl;
-        std::vector<cv::Point2f> new_corners = _extract_corners(Params::num_corners+
-                      Params::addl_corners);
+	      //std::cout << Params::CLR_GREEN << Params::CLR_INVERT << " Re-extracting corners " << Params::CLR_RESET << std::endl;
+        std::vector<cv::Point2f> new_corners = _extract_corners(Params::num_corners+Params::addl_corners);
 
-        std::cout << "Adding more corners" << std::endl;
+        //std::cout << "Adding more corners" << std::endl;
         //add corners which do not fall within the epsilon threshold as features to the
         //features_map of the next frame	
 
-	//build a kd-tree to search for the points
-	FeaturePoints feature_pts;
-	for(auto iter = features_map.begin(); iter != features_map.end(); ++iter) {
-	  feature_pts.pts.push_back(iter->first);
-	}
-	nanoflann::KDTreeSingleIndexAdaptor<nanoflann::L2_Simple_Adaptor<float, FeaturePoints>,
-					    FeaturePoints, 2 /*dims*/>
-	  index(2,feature_pts, nanoflann::KDTreeSingleIndexAdaptorParams(10/*max leaf */));
-	index.buildIndex();
+	      //build a kd-tree to search for the points
+	      FeaturePoints feature_pts;
+	      for(auto iter = features_map.begin(); iter != features_map.end(); ++iter) {
+	          feature_pts.pts.push_back(iter->first);
+	      }
+	      nanoflann::KDTreeSingleIndexAdaptor<nanoflann::L2_Simple_Adaptor<float, FeaturePoints>, FeaturePoints, 2 /*dims*/>
+	      index(2,feature_pts, nanoflann::KDTreeSingleIndexAdaptorParams(10/*max leaf */));
+	      index.buildIndex();
 	
-	const float search_radius = pow(Params::feature_search_boundary,2);
+	      const float search_radius = pow(Params::feature_search_boundary,2);
 
-        for(auto corner_iter = new_corners.begin(); corner_iter != new_corners.end();
-            ++corner_iter) {
-	  float query_pt[2] = {corner_iter->x, corner_iter->y};
-	  std::vector<std::pair<size_t,float> > ret_matches;
-	  nanoflann::SearchParams params;
-	  size_t nmatches = index.radiusSearch(&query_pt[0], search_radius, ret_matches, params);
+        for(auto corner_iter = new_corners.begin(); corner_iter != new_corners.end(); ++corner_iter) {
+	        float query_pt[2] = {corner_iter->x, corner_iter->y};
+	        std::vector<std::pair<size_t,float> > ret_matches;
+	        nanoflann::SearchParams params;
+	        size_t nmatches = index.radiusSearch(&query_pt[0], search_radius, ret_matches, params);
 	  
-	  if(nmatches > 0) {
-	    // std::cout << Params::CLR_MAGENTA << Params::CLR_INVERT << "Found " <<
-	    //   ret_matches.size() <<
-	    //   " features " << *corner_iter <<  " closer to the new point with distance " <<
-	    //   ret_matches[0].second << " Pt:" << feature_pts.pts[ret_matches[0].first] <<
-	    //   " search radius " << search_radius << 
-	    //   Params::CLR_RESET << std::endl;
-	  } else {
-            //add it in
-            nxt->features_map[*corner_iter] =  std::make_shared<Feature>(*corner_iter);
-            //Feature::make_feature(*corner_iter);
+	        if(nmatches > 0) {
+	            // std::cout << Params::CLR_MAGENTA << Params::CLR_INVERT << "Found " <<
+	            //   ret_matches.size() <<
+	            //   " features " << *corner_iter <<  " closer to the new point with distance " <<
+	            //   ret_matches[0].second << " Pt:" << feature_pts.pts[ret_matches[0].first] <<
+	            //   " search radius " << search_radius << 
+	            //   Params::CLR_RESET << std::endl;
+	          } else {
+                   //add it in
+                   nxt->features_map[*corner_iter] =  std::make_shared<Feature>(*corner_iter);
+                   //Feature::make_feature(*corner_iter);
           }
         }	
       }
@@ -789,6 +786,7 @@ namespace VisualFrontend {
     _get_features_index_map(features_index_map);
     nxt->_get_features_index_map(nxt_features_index_map);
 
+    #pragma omp parallel for num_threads(4)
     for(size_t i=0; i<matches.size(); ++i) {
      
       std::shared_ptr<Feature> f1 = features_index_map[matches[i].queryIdx];
@@ -858,9 +856,7 @@ namespace VisualFrontend {
   }
   
 
-  void Frame::_feature_tracking(std::shared_ptr<Frame> nxt,
-				FMatches &fmatches,
-				TrackingType tracking_type) {
+  void Frame::_feature_tracking(std::shared_ptr<Frame> nxt, FMatches &fmatches, TrackingType tracking_type) {
 
     fmatches._check_datastructure_integrity("feature_tracking");
     
@@ -900,9 +896,9 @@ namespace VisualFrontend {
     
     //create the working set
     std::vector<std::shared_ptr<Feature> > prev_working_set;
+
     // iterate through features_map
-    for(;frame1_iter != features_map.end() && frame2_iter != nxt->features_map.end();
-	      ++frame1_iter) {
+    for(;frame1_iter != features_map.end() && frame2_iter != nxt->features_map.end(); ++frame1_iter) {
 
       double min_x,max_x,min_y,max_y;
       
@@ -923,16 +919,14 @@ namespace VisualFrontend {
 
       //ignore if this feature is already tracked
       if(tracking_type == STEREO && frame1_iter->second->tracked) {
-	continue;
+          continue;
       }
 
       //create the working set
       std::vector<std::shared_ptr<Feature> > working_set;
 
       //check if we have entries from the previous working set that need to be considered
-      for(auto prev_iter=prev_working_set.begin(); 
-          prev_iter != prev_working_set.end();
-	        ++prev_iter) {
+      for(auto prev_iter=prev_working_set.begin(); prev_iter != prev_working_set.end(); ++prev_iter) {
         //skip the pixel rows which fall beyond (lesser) the tolerance range
         if((*prev_iter)->lpix.y < min_y)
           continue;
@@ -947,7 +941,7 @@ namespace VisualFrontend {
         if(frame2_iter->second->lpix.y < min_y) {
           frame2_iter++;
           continue;
-	      }
+	    }
         //pick the pixels which fall within the tolerance limit
         if(frame2_iter->second->lpix.y <= max_y) {
           working_set.push_back(frame2_iter->second);
@@ -961,9 +955,7 @@ namespace VisualFrontend {
       prev_working_set = working_set;
 
       //now find the norm for the descriptors in the working set
-      for(auto working_iter = working_set.begin();
-	        working_iter != working_set.end();
-	        ++working_iter) {
+      for(auto working_iter = working_set.begin(); working_iter != working_set.end(); ++working_iter) {
 
         //Now check if we are within the x bounds. Since we have set separate
         //bounds for both frame2frame and stereo, we should be ok
@@ -971,12 +963,10 @@ namespace VisualFrontend {
           continue;
 
         if(tracking_type == STEREO) {
-
-	  //ignore the feature if its already tracked
-	  if((*working_iter)->tracked) {
-	    continue;
-	  }
-	  
+	      //ignore the feature if its already tracked
+	      if((*working_iter)->tracked) {
+	        continue;
+	      }
 	  //set the disparity
           //right - left
           double disparity = (*working_iter)->lpix.x - frame1_iter->second->lpix.x;
@@ -1047,7 +1037,6 @@ namespace VisualFrontend {
     
   }
 
-
   void Frame::_hybrid_tracking(std::shared_ptr<Frame> nxt,
 				    FMatches &fmatches,
 				    TrackingType tracking_type) {
@@ -1071,17 +1060,14 @@ namespace VisualFrontend {
       // 	threshold << std::endl;
       //if its below the set threshold, re-extract corners and track them using feature_tracking
       if(tracked_features < threshold) {
-
-	if(Params::custom_matcher) {
-	  _feature_tracking(nxt,fmatches,tracking_type);
-	} else {
-	  _bruteforce_feature_tracking(nxt,fmatches,tracking_type);
-	}
-	
+	      if(Params::custom_matcher) {
+	        _feature_tracking(nxt,fmatches,tracking_type);
+	      } 
+        else {
+	        _bruteforce_feature_tracking(nxt,fmatches,tracking_type);
+	      }
       }
       //if its above the threshold, just continue
-      
-      
     }      
   }
 

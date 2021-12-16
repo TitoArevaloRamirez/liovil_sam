@@ -31,9 +31,7 @@ namespace VisualFrontend {
     //in the right image. Make the number bigger for bad calibrations
     calibration_tolerance(5.),
     //variables for the display with matches
-    visualize(false),
-    write_to_file(false)
-   {
+    visualize(false){
      //feature_descriptor.set_descriptor(ORB);
    }
 
@@ -60,36 +58,39 @@ namespace VisualFrontend {
     if (Params::tracking == Params::HYBRID_BASED) {
 
       if(Params::old_hybrid) {
-      stereo_feature_matches = hybrid_based_frontend.frame_callback(curr_pair);
-      
-      curr_pair->get_left()->tracked = true;
-      curr_pair->get_right()->stereo_processed = true;
-      
-      prev_pair = curr_pair;
-      curr_pair.reset();
-      } else {
-      
-      // frame2frame tracking
-      if (prev_pair && curr_pair) {
-        tracking_feature_matches = prev_pair->get_left()->track(curr_pair->get_left());
-        tracking_feature_matches = prev_pair->get_right()->track(curr_pair->get_right());
-      }
-      // stereo matching
-      if(curr_pair)
-        stereo_feature_matches = curr_pair->get_left()->track(curr_pair->get_right());   
-       //
 
-      // reest
-      if (!prev_pair || 
-          (prev_pair->get_right()->tracked && prev_pair->get_right()->tracked) 
-        ) {
-        prev_pair = curr_pair;
-        curr_pair.reset();
-      }
-      }
+        //stereo_feature_matches = hybrid_based_frontend.frame_callback(curr_pair);
       
+        //curr_pair->get_left()->tracked = true;
+        //curr_pair->get_right()->stereo_processed = true;
+
+        //std::cout<< Params::CLR_GREEN <<"curr_pair \n \t frame_ids: " << curr_pair->get_ids() 
+        //<< "\n \t tracked (left): " << curr_pair->get_left()->tracked
+        //<< "\n \t stereo_processed (right): " << curr_pair->get_right()->stereo_processed << Params::CLR_RESET<< std::endl;
+      
+        //prev_pair = curr_pair;
+        //curr_pair.reset();
+      } 
+      else {
+        // frame2frame tracking
+        if (prev_pair && curr_pair) {
+          tracking_feature_matches = prev_pair->get_left()->track(curr_pair->get_left());
+          tracking_feature_matches = prev_pair->get_right()->track(curr_pair->get_right());
+        }
+        // stereo matching
+        if(curr_pair)
+          stereo_feature_matches = curr_pair->get_left()->track(curr_pair->get_right());   
+         //
+
+        // reest
+        if (!prev_pair || 
+            (prev_pair->get_right()->tracked && prev_pair->get_right()->tracked) 
+          ) {
+          prev_pair = curr_pair;
+          curr_pair.reset();
+        }
+      }
     }
-
     // feature_based or optical based
     else {
       //if the left frames exists in both the previous and the current frames,
@@ -101,6 +102,7 @@ namespace VisualFrontend {
         stereo_feature_matches = curr_pair->get_left()->track(curr_pair->get_right());
       //if we have used the previous pair for frame2frame tracking, we can get rid of it
       if(!prev_pair || prev_pair->get_left()->tracked) {
+        prev_pair.reset();
         prev_pair = curr_pair;
         curr_pair.reset();
       }
@@ -119,6 +121,7 @@ namespace VisualFrontend {
         //acquire lock and copy the object
         std::unique_lock<std::mutex> lock(left_mutex_);
         next_pair->add_left(just_arrived_left);
+
         just_arrived_left.reset();
       }
 
@@ -138,7 +141,7 @@ namespace VisualFrontend {
         // bad fix?
         //else if (next_pair->get_left()->frameid > next_pair->get_right()->frameid) {
 	      else {
-	        std::cout << Params::CLR_MAGENTA << Params::CLR_INVERT << "Triggered the else case " << Params::CLR_RESET << std::endl;
+	        //std::cout << Params::CLR_MAGENTA << Params::CLR_INVERT << "Triggered the else case " << Params::CLR_RESET << std::endl;
           next_pair->get_left()->frameid = next_pair->get_right()->frameid; 
           curr_pair = next_pair;
           next_pair.reset();

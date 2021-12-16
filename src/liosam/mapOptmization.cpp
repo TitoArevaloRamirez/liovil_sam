@@ -1,4 +1,6 @@
 #include "utility.h"
+#include "utility_vio.h"
+
 #include "liovil_sam/cloud_info.h"
 #include "liovil_sam/save_map.h"
 
@@ -16,6 +18,9 @@
 #include <gtsam/inference/Symbol.h>
 
 #include <gtsam/nonlinear/ISAM2.h>
+
+
+
 
 using namespace gtsam;
 
@@ -76,8 +81,9 @@ public:
     ros::Subscriber subCloud;
     ros::Subscriber subGPS;
     ros::Subscriber subLoop;
+    ros::Subscriber f_sub;      //usr_vio
 
-    ros::Subscriber subStereo;  //usr
+    //ros::Subscriber subStereo;  //usr
 
     ros::ServiceServer srvSaveMap;
 
@@ -154,9 +160,38 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
+    //
+    // ############################ VIO Section ######################
+    //
+    
+    bool initd;
+    bool newKeyframe;
+    std::queue<keyframe> keyframeBuffer;
 
+    // keeep data
+    std::map<uint64_t, keyframe> Win_keyFrame; // Kid to keyframe
+    std::map<uint64_t, landmark> landMarks; // Lid to landmark
+    std::map<uint64_t, candi_feat_info> candi_feature_pool; // feature id to candi_feat_info
+    
+    // smart factor
+    gtsam::Pose3 body_P_sensor; // left camera to IMU
+    gtsam::Cal3_S2Stereo::shared_ptr Kstereo;
+    gtsam::noiseModel::Isotropic::shared_ptr cam_noise_model;
+    gtsam::SmartStereoProjectionParams paramsSF;
+
+    // robustness
+    double featRatio;
+    uint64_t N_thru;
+    gtsam::TriangulationParameters triangulationParam;
+
+    std::string frontendTopic;
+
+    //
+    // ############################ Map Optimization ######################
+    //
     mapOptimization()
     {
+        //std::cout<< "Hola map optimization" << std::endl;
         ISAM2Params parameters;
         parameters.relinearizeThreshold = 0.1;
         parameters.relinearizeSkip = 1;
@@ -169,6 +204,7 @@ public:
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
 
         subCloud = nh.subscribe<liovil_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
+
         subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         //
         //subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &mapOptimization::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
@@ -176,6 +212,63 @@ public:
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("lio_loop/loop_closure_detection", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
 
         srvSaveMap  = nh.advertiseService("lio_sam/save_map", &mapOptimization::saveMapService, this);
+
+    //
+    // ############################ VIO Section ######################
+    // read VIO parameters
+    //:initd(false), newKeyframe(false)
+        initd = false;
+        newKeyframe = false;
+
+        nh.getParam("vio/frontend_topic", frontendTopic);
+        //std::cout<< frontendTopic << std::endl;
+
+        //f_sub = nh.subscribe(frontendTopic, 1000, &mapOptimization::frame_callback, this);
+        
+        // camera and lidar
+        double stereo_fx_, stereo_fy_, stereo_cx_, stereo_cy_, stereo_baseline_; 
+        nh.getParam("vio/fx", stereo_fx_);
+        nh.getParam("vio/fy", stereo_fy_);
+        nh.getParam("vio/cx", stereo_cx_);
+        nh.getParam("vio/cy", stereo_cy_);
+        nh.getParam("vio/baseline", stereo_baseline_);
+
+        // set camera intrinsic
+        Kstereo = gtsam::Cal3_S2Stereo::shared_ptr(new gtsam::Cal3_S2Stereo(stereo_fx_, stereo_fy_, 0, stereo_cx_, stereo_cy_, stereo_baseline_)); 
+        // set extrinsics between IMU and left camera
+        std::vector<double> quaternion_I_LC;
+        std::vector<double> position_I_LC;
+        nh.getParam("vio/quat_I_LC", quaternion_I_LC);
+        nh.getParam("vio/posi_I_LC", position_I_LC);
+
+        gtsam::Rot3 cam_rot = gtsam::Rot3::Quaternion(quaternion_I_LC[0], 
+                                                      quaternion_I_LC[1],
+                                                      quaternion_I_LC[2],
+                                                      quaternion_I_LC[3]);
+        gtsam::Point3 cam_trans = gtsam::Point3(position_I_LC[0], 
+                                                position_I_LC[1], 
+                                                position_I_LC[2]);  
+
+        // set camera noise
+        double camera_noise_sigma;
+        nh.getParam("vio/camera_sigma", camera_noise_sigma);
+        cam_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, camera_noise_sigma);
+
+        double distThresh, outlierRejThresh;
+        nh.getParam("vio/landmark_distance_threshold", distThresh);
+        nh.getParam("vio/outlier_rejection_threshold", outlierRejThresh);        
+        
+        // set frontend screening parameter: for robustness
+        nh.getParam("robust_feature_ratio", featRatio);
+        double nThru_;
+        nh.getParam("number_frame_tracked", nThru_);
+        N_thru = nThru_;
+        nh.getParam("triangulation_landmark_distance_threshold", triangulationParam.landmarkDistanceThreshold);
+        nh.getParam("triangulation_outlier_rejection_threshold", triangulationParam.dynamicOutlierRejectionThreshold);
+        
+    //
+    // ############################ VIO Section ######################
+    //
 
         pubHistoryKeyFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_history_cloud", 1);
         pubIcpKeyFrames       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_corrected_cloud", 1);
@@ -270,6 +363,11 @@ public:
 
             publishFrames();
         }
+    }
+
+    void frame_callback(const liovil_sam::StereoFeatureMatches::ConstPtr& msg) {
+        //std::cout<<"Hola frame callback"<<std::endl;
+        return;
     }
 
 
@@ -1837,7 +1935,7 @@ int main(int argc, char** argv)
 
     mapOptimization MO;
 
-    ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
+    ROS_INFO("\033[1;36m\n >>> Map Optimization Started <<< \033[0m");
     
     std::thread loopthread(&mapOptimization::loopClosureThread, &MO);
     std::thread visualizeMapThread(&mapOptimization::visualizeGlobalMapThread, &MO);

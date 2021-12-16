@@ -599,7 +599,7 @@ int main(int argc, char** argv)
 
     ImageProjection IP;
     
-    ROS_INFO("\033[1;32m----> Image Projection Started.\033[0m");
+    ROS_INFO("\033[1;36m\n >>> Image Projection Started <<< \033[0m");
 
     ros::MultiThreadedSpinner spinner(3);
     spinner.spin();

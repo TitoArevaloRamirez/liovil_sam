@@ -16,6 +16,10 @@
     Sliding Window with smart factors is working. No keyframes but only recent 'lag' frames.
     input: FRONTEND: frame ID should start from 1.
 */
+
+#pragma once
+
+
 #include <ros/ros.h>
 #include <map>
 #include <cmath>
@@ -73,6 +77,8 @@
 #include <tf/transform_datatypes.h>
 
 #include "vio/CameraPoseVisualization.h"
+
+#include <thread>
 
 using gtsam::symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
 using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
@@ -263,43 +269,51 @@ public:
     /* Constructor */
     VINSmart_estimator(ros::NodeHandle& nh) : cameraposevisual(1,0,0,1), gravity(9.81), initd(false),
                 newKeyframe(false), imuMsg(false),  last_frame_time(0.0), last_imu_time(0.0), firstIMU(true) {
+        //ROS_INFO("\033[1;33m----> HOLA .\033[0m");
         // subscribers and publishers 
         std::string imuTopic, frontendTopic, lidarTopic, lcTopic, odomIMU, odomCamera, cameraPoseVisual, cameraPath, landmarkPub; 
-        nh.getParam("vio/imu_topic", imuTopic);
-        nh.getParam("vio/frontend_topic", frontendTopic);
-        nh.getParam("vio/lidar_topic", lidarTopic);
-        nh.getParam("vio/loop_closure_topic", lcTopic);
-        nh.getParam("vio/odom_imu_rate_topic", odomIMU);
-        nh.getParam("vio/odom_camera_rate_topic", odomCamera);
-        nh.getParam("vio/camera_pose_visual_topic", cameraPoseVisual);
-        nh.getParam("vio/camera_path_publish_topic", cameraPath);
-        nh.getParam("vio/landmark_topic", landmarkPub);
+        nh.getParam("imu_topic", imuTopic);
+        nh.getParam("frontend_topic", frontendTopic);
+        nh.getParam("lidar_topic", lidarTopic);
+        nh.getParam("loop_closure_topic", lcTopic);
+        nh.getParam("odom_imu_rate_topic", odomIMU);
+        nh.getParam("odom_camera_rate_topic", odomCamera);
+        nh.getParam("camera_pose_visual_topic", cameraPoseVisual);
+        nh.getParam("camera_path_publish_topic", cameraPath);
+        nh.getParam("landmark_topic", landmarkPub);
         // subscribers
-        std::cout << imuTopic << " " << frontendTopic << " " << lidarTopic << std::endl;
-        imu_sub = nh.subscribe(imuTopic, 300, &VINSmart_estimator::imu_callback, this);
-        f_sub = nh.subscribe(frontendTopic, 300, &VINSmart_estimator::frame_callback, this);
-        lidar_sub = nh.subscribe(lidarTopic, 300, &VINSmart_estimator::lidar_callback, this);
-        lc_sub = nh.subscribe(lcTopic,100, &VINSmart_estimator::lc_callback, this);
+        imu_sub = nh.subscribe(imuTopic, 1000, &VINSmart_estimator::imu_callback, this);
+        f_sub = nh.subscribe(frontendTopic, 1000, &VINSmart_estimator::frame_callback, this);
+        lidar_sub = nh.subscribe(lidarTopic, 1000, &VINSmart_estimator::lidar_callback, this);
         // publishers
         odom_imu_pub = nh.advertise<nav_msgs::Odometry>(odomIMU, 100);
         odom_camera_pub = nh.advertise<nav_msgs::Odometry>(odomCamera, 100);
         camera_pose_visual_pub = nh.advertise<visualization_msgs::MarkerArray>(cameraPoseVisual, 100);
         camera_path_pub = nh.advertise<nav_msgs::Path>(cameraPath, 1000);
         landmark_pub = nh.advertise<liovil_sam::landmarks>(landmarkPub, 100);
+
+        //std::cout<< "\033[0;36m \t Subscribed (to IMU): " << imuTopic << "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Subscribed (to Frontend): " << frontendTopic << "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Subscribed (to LiDAR): " << lidarTopic<< "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Publish to (odom IMU): " << odomIMU << "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Publish to (odom camera): " << odomCamera<< "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Publish to (camera path): " << cameraPath<< "\033[0m" << std::endl;
+        //std::cout<< "\033[0;36m \t Publish to (landmark): " << landmarkPub<< "\033[0m" << std::endl;
+
         // camera and lidar
         double stereo_fx_, stereo_fy_, stereo_cx_, stereo_cy_, stereo_baseline_; 
-        nh.getParam("vio/fx", stereo_fx_);
-        nh.getParam("vio/fy", stereo_fy_);
-        nh.getParam("vio/cx", stereo_cx_);
-        nh.getParam("vio/cy", stereo_cy_);
-        nh.getParam("vio/baseline", stereo_baseline_);
+        nh.getParam("fx", stereo_fx_);
+        nh.getParam("fy", stereo_fy_);
+        nh.getParam("cx", stereo_cx_);
+        nh.getParam("cy", stereo_cy_);
+        nh.getParam("baseline", stereo_baseline_);
         // set camera intrinsic
         Kstereo = gtsam::Cal3_S2Stereo::shared_ptr(new gtsam::Cal3_S2Stereo(stereo_fx_, stereo_fy_, 0, stereo_cx_, stereo_cy_, stereo_baseline_)); 
         // set extrinsics between IMU and left camera
         std::vector<double> quaternion_I_LC;
         std::vector<double> position_I_LC;
-        nh.getParam("vio/quat_I_LC", quaternion_I_LC);
-        nh.getParam("vio/posi_I_LC", position_I_LC);
+        nh.getParam("quat_I_LC", quaternion_I_LC);
+        nh.getParam("posi_I_LC", position_I_LC);
 
         gtsam::Rot3 cam_rot = gtsam::Rot3::Quaternion(quaternion_I_LC[0], 
                                                       quaternion_I_LC[1],
@@ -312,45 +326,47 @@ public:
         body_P_sensor = gtsam::Pose3(cam_rot, cam_trans);
         // set extrinsics between IMU and Lidar
         std::vector<double> transformation_I_Lidar;
-        nh.getParam("vio/T_I_Lidar", transformation_I_Lidar);
+        nh.getParam("T_I_Lidar", transformation_I_Lidar);
         for (int i=0;i<4;i++)
             for (int j=0;j<4;j++)
                 T_L_I(i,j) = transformation_I_Lidar[i*4+j];
         // set if use lidar callback and time interval restricted
-        nh.getParam("vio/lidar_feedback", lcfb);
-        nh.getParam("vio/time_interval_to_use_lidar_feedback", diff_);
+        nh.getParam("lidar_feedback", lcfb);
+        nh.getParam("time_interval_to_use_lidar_feedback", diff_);
         // set camera noise
         double camera_noise_sigma;
-        nh.getParam("vio/camera_sigma", camera_noise_sigma);
+        nh.getParam("camera_sigma", camera_noise_sigma);
         cam_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, camera_noise_sigma);
         // set state noise
         double imu_gyro_bias_noise_sigma, imu_acce_bias_noise_sigma;
-        nh.getParam("vio/imu_gyro_bias_noise_sigma", imu_gyro_bias_noise_sigma);
-        nh.getParam("vio/imu_acce_bias_noise_sigma", imu_acce_bias_noise_sigma);
+        nh.getParam("imu_gyro_bias_noise_sigma", imu_gyro_bias_noise_sigma);
+        nh.getParam("imu_acce_bias_noise_sigma", imu_acce_bias_noise_sigma);
         bias_noise_model = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 
                         imu_acce_bias_noise_sigma, imu_acce_bias_noise_sigma, imu_acce_bias_noise_sigma, 
                         imu_gyro_bias_noise_sigma, imu_gyro_bias_noise_sigma, imu_gyro_bias_noise_sigma).finished());
         // set lidar feedback noise
         double lcfb_noise_transSigma, lcfb_noise_orienSigma;
-        nh.getParam("vio/lidar_feedback_sigma_trans", lcfb_noise_transSigma);
-        nh.getParam("vio/lidar_feedback_sigma_orien", lcfb_noise_orienSigma);
+        nh.getParam("lidar_feedback_sigma_trans", lcfb_noise_transSigma);
+        nh.getParam("lidar_feedback_sigma_orien", lcfb_noise_orienSigma);
         lidar_cb_poseNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 
                         lcfb_noise_orienSigma, lcfb_noise_orienSigma, lcfb_noise_orienSigma,
                         lcfb_noise_transSigma, lcfb_noise_transSigma, lcfb_noise_transSigma).finished()); // rad rad rad m m m
         // set optimizer paramters
-        nh.getParam("vio/lag_to_use", lag);
-        nh.getParam("vio/bound_optimizer", bound_smoother);
-        nh.getParam("vio/use_isam2", useISAM2);
+        nh.getParam("lag_to_use", lag);
+        nh.getParam("bound_optimizer", bound_smoother);
+        nh.getParam("use_isam2", useISAM2);
         // set parameter for Smart Factor
         double distThresh, outlierRejThresh;
-        nh.getParam("vio/landmark_distance_threshold", distThresh);
-        nh.getParam("vio/outlier_rejection_threshold", outlierRejThresh);        
+        nh.getParam("landmark_distance_threshold", distThresh);
+        nh.getParam("outlier_rejection_threshold", outlierRejThresh);        
         paramsSF.setLinearizationMode(gtsam::LinearizationMode::JACOBIAN_SVD); // HESSIAN not implemented?
         paramsSF.setLandmarkDistanceThreshold(distThresh);
         paramsSF.setDynamicOutlierRejectionThreshold(outlierRejThresh);
         //paramsSF.setEnableEPI(true);
         //paramsSF.setRankTolerance(0);
-        paramsSF.print();
+        //
+        //paramsSF.print();
+        //
         // set parameter for ISAM2 optimizer
         paramISAM2.optimizationParams = gtsam::ISAM2GaussNewtonParams();// gtsam::ISAM2DoglegParams();
         //paramISAM2.relinearizeThreshold = 0.1;
@@ -358,39 +374,39 @@ public:
         isam2 = gtsam::ISAM2(paramISAM2);
         // set parameter for LM optimzer
         bool ceresDef;
-        nh.getParam("vio/use_ceres_default", ceresDef);
+        nh.getParam("use_ceres_default", ceresDef);
         if (ceresDef)
             LevenbergMarquardtParams::SetCeresDefaults(&paramsLM);
         else {
             LevenbergMarquardtParams::SetLegacyDefaults(&paramsLM);
             double maxIter;
-            nh.getParam("vio/max_iteration", maxIter);
+            nh.getParam("max_iteration", maxIter);
             paramsLM.maxIterations = maxIter;
-            nh.getParam("vio/absolute_error_toleration", paramsLM.absoluteErrorTol);
-            nh.getParam("vio/relative_error_toleration", paramsLM.absoluteErrorTol);
-            nh.getParam("vio/lambda_upper_bound", paramsLM.lambdaUpperBound);
+            nh.getParam("absolute_error_toleration", paramsLM.absoluteErrorTol);
+            nh.getParam("relative_error_toleration", paramsLM.absoluteErrorTol);
+            nh.getParam("lambda_upper_bound", paramsLM.lambdaUpperBound);
         }
         //paramsLM.errorTol = 0;
         paramsLM.setLinearSolverType("MULTIFRONTAL_CHOLESKY");
         paramsLM.verbosityLM = gtsam::LevenbergMarquardtParams::SILENT;
-        paramsLM.print();
+        //paramsLM.print();
         // create graph and smoother
         graph = new gtsam::NonlinearFactorGraph();
         smootherBatch = BatchFixedLagSmoother(lag, bound_smoother, paramsLM);
         // set frontend screening parameter: for robustness
-        nh.getParam("vio/robust_feature_ratio", featRatio);
+        nh.getParam("robust_feature_ratio", featRatio);
         double nThru_;
-        nh.getParam("vio/number_frame_tracked", nThru_);
+        nh.getParam("number_frame_tracked", nThru_);
         N_thru = nThru_;
-        nh.getParam("vio/triangulation_landmark_distance_threshold", triangulationParam.landmarkDistanceThreshold);
-        nh.getParam("vio/triangulation_outlier_rejection_threshold", triangulationParam.dynamicOutlierRejectionThreshold);
+        nh.getParam("triangulation_landmark_distance_threshold", triangulationParam.landmarkDistanceThreshold);
+        nh.getParam("triangulation_outlier_rejection_threshold", triangulationParam.dynamicOutlierRejectionThreshold);
         // initialize last_optimized_state to identity::origin
         last_optimized_state.pose = gtsam::Pose3(gtsam::Rot3(),gtsam::Point3(0.0,0.0,0.0));
         // Assemble noise model
         double statePoseNoiseSigmaTrans, statePoseNoiseSigmaOrien, stateVelNoiseSigma; 
-        nh.getParam("vio/state_pose_trans_noise_sigma", statePoseNoiseSigmaTrans);
-        nh.getParam("vio/state_pose_orien_noise_sigma", statePoseNoiseSigmaOrien);
-        nh.getParam("vio/state_velocity_noise_sigma", stateVelNoiseSigma);
+        nh.getParam("state_pose_trans_noise_sigma", statePoseNoiseSigmaTrans);
+        nh.getParam("state_pose_orien_noise_sigma", statePoseNoiseSigmaOrien);
+        nh.getParam("state_velocity_noise_sigma", stateVelNoiseSigma);
         last_optimized_state.pose_noise = gtsam::noiseModel::Diagonal::Sigmas(
             (gtsam::Vector(6) << statePoseNoiseSigmaOrien, statePoseNoiseSigmaOrien, statePoseNoiseSigmaOrien,
                         statePoseNoiseSigmaTrans, statePoseNoiseSigmaTrans, statePoseNoiseSigmaTrans).finished()); // rad,rad,rad,m, m, m
@@ -398,16 +414,16 @@ public:
         last_optimized_state.bias_noise = bias_noise_model;
         // Use the sensor specs to build the noise model for the IMU factor.
         std::vector<double> accelBiasCov, gyroBiasCov, accelNoiseCov, gyroNoiseCov;
-        nh.getParam("vio/accelerameter_noise_cov", accelNoiseCov);
-        nh.getParam("vio/gyroscope_noise_cov", gyroNoiseCov);
+        nh.getParam("accelerameter_noise_cov", accelNoiseCov);
+        nh.getParam("gyroscope_noise_cov", gyroNoiseCov);
         gyro_noise_cov << gyroNoiseCov[0], gyroNoiseCov[1], gyroNoiseCov[2],
                           gyroNoiseCov[3], gyroNoiseCov[4], gyroNoiseCov[5],
                           gyroNoiseCov[6], gyroNoiseCov[7], gyroNoiseCov[8];
         accel_noise_cov << accelNoiseCov[0], accelNoiseCov[1], accelNoiseCov[2],
                           accelNoiseCov[3], accelNoiseCov[4], accelNoiseCov[5],
                           accelNoiseCov[6], accelNoiseCov[7], accelNoiseCov[8];
-        nh.getParam("vio/accelerameter_bias_cov", accelBiasCov);
-        nh.getParam("vio/gyroscope_bias_cov", gyroBiasCov);
+        nh.getParam("accelerameter_bias_cov", accelBiasCov);
+        nh.getParam("gyroscope_bias_cov", gyroBiasCov);
         accel_bias_cov << accelBiasCov[0], accelBiasCov[1], accelBiasCov[2],
                           accelBiasCov[3], accelBiasCov[4], accelBiasCov[5],
                           accelBiasCov[6], accelBiasCov[7], accelBiasCov[8];
@@ -416,9 +432,9 @@ public:
                           gyroBiasCov[6], gyroBiasCov[7], gyroBiasCov[8];
         // set pre-intergraion parameter
         double intgrationCov, biaAccOmega;
-        nh.getParam("vio/integration_cov_sigma2", intgrationCov);
-        nh.getParam("vio/bias_accelermeter_intgration_sigma2", biaAccOmega);
-        std::cout << "************Here***********" << std::endl;
+        nh.getParam("integration_cov_sigma2", intgrationCov);
+        nh.getParam("bias_accelermeter_intgration_sigma2", biaAccOmega);
+        //std::cout << "************Here***********" << std::endl;
         p = gtsam::PreintegratedCombinedMeasurements::Params::MakeSharedU(gravity);
         // acc white noise in continuous
         p->accelerometerCovariance = accel_noise_cov;
@@ -593,7 +609,7 @@ public:
             imu_propogation_state.pose = pred_cur_pose.pose();
             imu_propogation_state.velocity = pred_cur_pose.v();
             // publish the result
-            //publish_imu_rate_pose(imu_propogation_state);
+            publish_imu_rate_pose(imu_propogation_state);
         }
         return;
     }
@@ -643,7 +659,7 @@ public:
                     // check stereo triangulation
                     gtsam::TriangulationResult result =
                     gtsam::triangulateSafe(monoCameras, monoMeasured, triangulationParam);
-                    std::cout << result;
+                    //std::cout << result;
                     if (result) {
                         num_feat_thru_N_frame++;
                         whether_robust_feat[msg->feature_ids[i]] = true;
@@ -651,7 +667,7 @@ public:
                     monoMeasured.clear();
                 }
             }
-            std::cout << "INIT: Total feature of " << totalCnt << " with robust of " << num_feat_thru_N_frame << std::endl;
+            //std::cout << "INIT: Total feature of " << totalCnt << " with robust of " << num_feat_thru_N_frame << std::endl;
             //std::cout << "HERE CTM 1" << std::endl; 
             // initialize if there are enough robust features
             if ( double(num_feat_thru_N_frame) > featRatio * double(totalCnt) ) {  
@@ -744,9 +760,9 @@ public:
                     candi_feature_pool[msg->feature_ids[i]] = candi_feat_info(1,msg->frame_id-1);
             }
             // useful info
-            std::cout << std::setprecision(8) << "relative translation: " << (pred_cur_pose.t()-last_optimized_state.pose.translation()).norm() << "\n";
-            std::cout << "Feature number in total: " << totalCnt << " with robust new: " << num_feat_thru_N_frame
-                      << " and local landmark " << num_feat_as_landmark << std::endl;
+            //std::cout << std::setprecision(8) << "relative translation: " << (pred_cur_pose.t()-last_optimized_state.pose.translation()).norm() << "\n";
+            //std::cout << "Feature number in total: " << totalCnt << " with robust new: " << num_feat_thru_N_frame
+                      //<< " and local landmark " << num_feat_as_landmark << std::endl;
             // no IMU info.
             if ((pred_cur_pose.t()-last_optimized_state.pose.translation()).norm() == 0)
                 return;
@@ -779,7 +795,7 @@ public:
             // create keyframe object
             keyframeBuffer.push(KFtoADD);
             newKeyframe = true;
-            std::cout << KFtoADD;
+            //std::cout << KFtoADD;
         }
         // calculated time
         //float diff( -((float)start-(float)clock())/CLOCKS_PER_SEC );
@@ -788,7 +804,7 @@ public:
     }
     // lidar callback function
     void lidar_callback(const nav_msgs::Odometry::ConstPtr& msg) {
-        std::cout << "lidar callback: [" << (int)msg->header.seq << "]\n";
+        //std::cout << "lidar callback: [" << (int)msg->header.seq << "]\n";
         // initialize and set time
         gtsam::Pose3 lidar_cb_pose;
         ros::Time lidar_cb_time = msg->header.stamp;
@@ -819,31 +835,29 @@ public:
         if (lcfb) {
             for (auto it = Win_keyFrame.begin(); it!=Win_keyFrame.end(); it++) {
                 double diff = fabs( (double)lidar_cb_time.toNSec()/1e9-(double)it->second.timestamp.toNSec()/1e9 ); 
-                std::cout << "Time diff lidar feedback: "<< diff << std::endl;
+                //std::cout << "Time diff lidar feedback: "<< diff << std::endl;
                 // check
                 if ( diff < diff_ ) {
-                    std::cout << "\nLidar callback found and added at " << std::setprecision(16) << "Lidar time: " << lidar_cb_time.toNSec()/1e9 << " CB_frame time: " 
-                        << it->second.timestamp.toNSec()/1e9 <<" with diff " << diff << "\n";
+                    //std::cout << "\nLidar callback found and added at " << std::setprecision(16) << "Lidar time: " << lidar_cb_time.toNSec()/1e9 << " CB_frame time: " 
+                    //    << it->second.timestamp.toNSec()/1e9 <<" with diff " << diff << "\n";
                     uint64_t lidarCB_frame_id = it->first;
                     // add prior
                     graph->add(gtsam::PriorFactor<Pose3>(X(lidarCB_frame_id), lidar_cb_pose, lidar_cb_poseNoise));
                     // print
-                    std::cout << "Lidar Callback Pose:\n";
-                    lidar_cb_pose.print();
-                    std::cout << "Frame Pose:\n";
-                    smootherBatch.calculateEstimate().at<gtsam::Pose3>(X(lidarCB_frame_id)).print();
+                    //std::cout << "Lidar Callback Pose:\n";
+                    //lidar_cb_pose.print();
+                    //std::cout << "Frame Pose:\n";
+                    //smootherBatch.calculateEstimate().at<gtsam::Pose3>(X(lidarCB_frame_id)).print();
                 }
             }
         }
         return;
     }
-    // loop closure frame pose callback function
-    void lc_callback(const nav_msgs::Odometry::ConstPtr& msg) {return;}
     // this function publishes IMU rate poses
     void publish_imu_rate_pose(const state_info& imu_rate_pose) {
         nav_msgs::Odometry odom;
         odom.header.stamp = imu_rate_pose.msgtime;
-        odom.header.frame_id = "odom"; // world usr
+        odom.header.frame_id = "map"; // world usr
         //set the position
         odom.pose.pose.position.x = imu_rate_pose.pose.translation()(0);
         odom.pose.pose.position.y = imu_rate_pose.pose.translation()(1);
@@ -866,13 +880,13 @@ public:
     // this function publishes camera rate poses
     void publish_camera_rate_pose(const state_info& camera_rate_pose) {
 
-        aftMappedTrans.frame_id_ = "odom"; // world usrworld";
+        aftMappedTrans.frame_id_ = "map"; // world usrworld";
         aftMappedTrans.child_frame_id_ = "/camera_odom";
 
         nav_msgs::Odometry odom;
         geometry_msgs::PoseStamped pose_stamped;
         odom.header.stamp = camera_rate_pose.msgtime;
-        odom.header.frame_id = "odom"; // world usrworld";
+        odom.header.frame_id = "map"; // world usrworld";
         odom.header.seq = camera_rate_pose.Kid;
         // set the position
         odom.pose.pose.position.x = camera_rate_pose.pose.translation()(0);
@@ -885,10 +899,10 @@ public:
         odom.pose.pose.orientation.w = camera_rate_pose.pose.rotation().toQuaternion().w();
         // get path
         pose_stamped.header.stamp = camera_rate_pose.msgtime;
-        pose_stamped.header.frame_id = "odom"; // world usrworld";
+        pose_stamped.header.frame_id = "map"; // world usrworld";
         pose_stamped.pose = odom.pose.pose;
         path.header.stamp = camera_rate_pose.msgtime;
-        path.header.frame_id = "odom"; // world usrworld";
+        path.header.frame_id = "map"; // world usrworld";
         path.poses.push_back(pose_stamped);
         // publish the message
         odom_camera_pub.publish(odom);
@@ -918,7 +932,7 @@ public:
     }
     // loop to run from the beginning
     void optimizeLoop() {
-        while(true) {
+        while(ros::ok()) {
             if (newKeyframe && initd) {
                 newKeyframe = false;
                 while(!keyframeBuffer.empty()) {
@@ -953,14 +967,15 @@ public:
                     last_frame_time = current_frame_time;
                     // calculated time
                     float diff( -((float)start-(float)clock())/CLOCKS_PER_SEC );
-                    std::cout << "optimizeLoop once time: " << std::setprecision(5) << diff*1.0e3 << "ms"<< std::endl;
+                    //std::cout << "optimizeLoop once time: " << std::setprecision(5) << diff*1.0e3 << "ms"<< std::endl;
                     outFile_time << diff << "\n";
                     outFile_time.close();
                     outFile_time.open(time_Path, std::ios_base::app);
                 }
             }
-            ros::spinOnce();
+            //ros::spinOnce();
         }
+        //ros::waitForShutdown();
         return;
     }
     // extract imu measurements and add as factor
@@ -1193,12 +1208,26 @@ public:
 // main
 int main(int argc, char **argv) {
     ros::init(argc, argv, "smart_smoother");
-    ros::NodeHandle nh;
-    VINSmart_estimator *smartS_estimator = new VINSmart_estimator(nh);
-    ROS_INFO("\033[1;32m----> VIO Started.\033[0m");
-    smartS_estimator->optimizeLoop();
+    ros::NodeHandle nh("~");
 
     ros::MultiThreadedSpinner spinner(4);
+
+    //ros::AsyncSpinner spinner(4); // Use 4 threads
+
+    //VINSmart_estimator *smartS_estimator = new VINSmart_estimator(nh);
+    ROS_INFO("\033[1;36m \n >>> Visual Inertial Odometry (VIO) started <<< \033[0m");
+    VINSmart_estimator smartS_estimator(nh); // = new VINSmart_estimator(nh);
+
+
+    //spinner.start();
+    std::thread loopthread(&VINSmart_estimator::optimizeLoop, &smartS_estimator);
+
     spinner.spin();
+
+
+    loopthread.join();
+
+
+    //smartS_estimator.optimizeLoop();
     return 0;
 }

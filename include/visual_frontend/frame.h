@@ -11,6 +11,8 @@
 /*                                                                                      */
 /* Please refer to the contract document for details on license/copyright information.  */
 /****************************************************************************************/
+#pragma once
+
 #ifndef __FRAME_H__
 #define __FRAME_H__
 
@@ -22,7 +24,7 @@
 #include <sstream>
 
 #include <opencv2/core/core.hpp>
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 namespace VisualFrontend {  
   
@@ -72,6 +74,7 @@ namespace VisualFrontend {
     bool tracked;
     bool stereo_processed;
     CameraInfo cam_info;
+
     
   protected:
     void _rescale();

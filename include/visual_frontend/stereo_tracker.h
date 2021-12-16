@@ -45,7 +45,6 @@ namespace VisualFrontend {
 					    NoDepthFeatures &nodepth_features);
     
     bool visualize;
-    bool write_to_file;
 
     std::shared_ptr<FMatches> stereo_feature_matches;
     std::shared_ptr<FMatches> tracking_feature_matches;
