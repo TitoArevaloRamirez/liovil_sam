@@ -4,10 +4,12 @@
 ##################################################
 #subscribers
 imu_topic: "/xsens/imu/data"
+odomImu_topic: "/odometry/imu_incremental"    #usr
+#imu_topic: "/odometry/imu"    #usr
 
 frontend_topic: "/stereo_matches"
 #lidar_topic: "/lio_sam/mapping/odometry_incremental" #usr
-lidar_topic: "/lio_sam/mapping/odometry" #usr
+lidar_topic: "/lio_sam/mapping/odometry_none" #usr
 odom_imu_rate_topic: "/odom_imu"
 
 #publisher
@@ -29,6 +31,8 @@ baseline: 0.247279067378212
 
 #FY
 quat_I_LC: [0.503096384820381, -0.49276446989981, 0.500896743794452, -0.501684436262218]
+#quat_I_LC: [0.4931329, 0.5034721, 0.5020589, 0.501271] #usr
+
 posi_I_LC: [0.0870551272380779, -0.107604788194452, 0.0180391607070435]
 
 # set extrinsic IMU and Lidar
@@ -38,7 +42,7 @@ T_I_Lidar: [1, 0, 0, -0.011356,
             0,  0, 0, 1]
 
 # whether use lidar feedback
-lidar_feedback: true # true
+lidar_feedback: false # true
 time_interval_to_use_lidar_feedback: 0.1 #0.001
 
 # set noise
@@ -49,7 +53,7 @@ imu_acce_bias_noise_sigma: 0.005 #0.005 # m
 lidar_feedback_sigma_trans: 0.07
 lidar_feedback_sigma_orien: 0.05
 
-lag_to_use: 15
+lag_to_use: 5  #15
 bound_optimizer: true
 use_isam2: false #not implemented
 

@@ -27,11 +27,9 @@
         <remap from="right/camera_info" to="/mapping/right/camera_info" />
     </node>
 
-
-
     <!--- Visual Frontend 
-    <include file="$(find liovil_sam)/launch/include/module_visual_frontend.launch" />
     -->
+    <include file="$(find liovil_sam)/launch/include/module_visual_frontend.launch" />
 
     <!--- VIO 
     <include file="$(find liovil_sam)/launch/include/module_vio.launch" />
@@ -42,11 +40,11 @@
     <include file="$(find liovil_sam)/launch/include/module_loam.launch" />
 
     <!--- Save Point Cloud Map 
-    -->
     <node pkg="$(arg project)" type="vlp16_points_listener.py" name="$(arg project)_listenSave_ptCloudMap" respawn="true" output="screen">
         <param name="filename" value="/home/frc-ag/Data/MappingResults/PointCloud/"/>
         <remap from="/ptCloud_save" to="/lio_sam/mapping/map_global" />
     </node>
+    -->
 
     <!--- Save Odometry GPS 
     <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_NavSat" respawn="true" output="screen">

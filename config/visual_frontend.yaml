@@ -10,8 +10,8 @@ rescale_factor: 0.5
 tracking_method: "OPTICALFLOW_BASED" # OPTICALFLOW_BASED FEATURE_BASED HYBRID_BASED
 descriptor: "ORB" # ORB SURF SIFT
 descriptor_distance_both_ways: false
-feature_extraction_boundary: 15
-feature_search_boundary: 15
+feature_extraction_boundary: 5 # 15
+feature_search_boundary: 20 #15
 min_dist_from_camera: 4
 max_disparity: 899.6
 # hybrid based
@@ -20,18 +20,18 @@ patch_num_c: 5
 reextract_patch_number: 10
 matcher_distance_threshold: 40
 # LKT based
-stereo_tracking_search_window: 31
-frame2frame_tracking_search_window: 31 #15
+stereo_tracking_search_window: 49 # 31
+frame2frame_tracking_search_window: 15  #31 #15
 percent_border: 0.1
 #methods
-old_hybrid: false
-custom_matcher: true 
+old_hybrid: false #false
+custom_matcher: true # true 
 # corner detector
-corner_number: 30
+corner_number: 100
 percent_matches: 0.3
 percent_min_corners: 0.3
-hybrid_percent_tracked_corners: 0.1
-addl_corners: 10 #10
+hybrid_percent_tracked_corners: 0.3 #0.1
+addl_corners: 10 #30 #10
 equalize_histogram: true 
 refine_corners_after_corner_extraction: false
 refine_corners_after_optical_flow: true

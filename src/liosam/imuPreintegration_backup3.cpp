@@ -1,7 +1,5 @@
 #include "utility.h"
 
-#include "utility_vio.h" //usr for vio
-
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -180,11 +178,9 @@ public:
 
     gtsam::PreintegratedImuMeasurements *imuIntegratorOpt_;
     gtsam::PreintegratedImuMeasurements *imuIntegratorImu_;
-    gtsam::PreintegratedImuMeasurements *imuIntegratorFrame_;
 
     std::deque<sensor_msgs::Imu> imuQueOpt;
     std::deque<sensor_msgs::Imu> imuQueImu;
-    std::deque<sensor_msgs::Imu> imuQueFrame;
 
     std::deque<nav_msgs::Odometry> stereoQueue;  //usr
 
@@ -197,12 +193,8 @@ public:
     gtsam::imuBias::ConstantBias prevBiasOdom;
 
     bool doneFirstOpt = false;
-    bool readKeyFrames = false; //usr
-    bool inFrame_callback = false; //usr
-    bool inOdometryHandler = false; //usr
     double lastImuT_imu = -1;
     double lastImuT_opt = -1;
-    double lastImuT_Frame = -1;
 
     gtsam::ISAM2 optimizer;
     gtsam::NonlinearFactorGraph graphFactors;
@@ -217,62 +209,10 @@ public:
 
     gtsam::Pose3 camera2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(0.0870551272380779, -0.107604788194452, 0.0180391607070435));
 
-
-    // ##################################### start  VIO section ##################################
-    
-    ros::Subscriber f_sub;
-
-    ros::Publisher odom_camera_pub;
-    ros::Publisher camera_path_pub;
-
-    nav_msgs::Path path;
-
-    // state
-    state_info last_optimized_state;
-    gtsam::noiseModel::Diagonal::shared_ptr bias_noise_model;
-    
-    // keeep data
-    std::map<uint64_t, keyframe> Win_keyFrame; // Kid to keyframe
-    std::map<uint64_t, landmark> landMarks; // Lid to landmark
-    std::map<uint64_t, candi_feat_info> candi_feature_pool; // feature id to candi_feat_info
-
-    // smart factor
-    gtsam::Pose3 body_P_sensor; // left camera to IMU
-    gtsam::Cal3_S2Stereo::shared_ptr Kstereo;
-    gtsam::noiseModel::Isotropic::shared_ptr cam_noise_model;
-    gtsam::SmartStereoProjectionParams paramsSF;
-    
-    // fixed lag optimzer
-
-    // interface with front end
-    bool initd;
-    bool newKeyframe;
-    std::deque<keyframe> keyframeBuffer;
-    //TimeBasedRetriever< Eigen::Matrix<double,11,1> > imuMsg;
-
-    TimeBasedRetriever< Eigen::Matrix<double,11,1> > odomImuMsg; //usr
-
-    ros::Time current_frame_time;
-    ros::Time last_frame_time;
-    ros::Time last_imu_time;
-
-    // robustness
-    double featRatio;
-    uint64_t N_thru;
-    gtsam::TriangulationParameters triangulationParam;
-
-    // initialization
-    bool firstIMU;
-
-    tf::TransformBroadcaster tfBroadcaster;
-    tf::StampedTransform aftMappedTrans;
-
-    // ##################################### end  VIO section ##################################
-    IMUPreintegration(): initd(false), newKeyframe(false), odomImuMsg(false), last_frame_time(0.0), last_imu_time(0.0), firstIMU(true){
-
+    IMUPreintegration()
+    {
         subImu      = nh.subscribe<sensor_msgs::Imu>  (imuTopic,                   2000, &IMUPreintegration::imuHandler,      this, ros::TransportHints().tcpNoDelay());
         subOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry_incremental", 5,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
-
         //subOdometry = nh.subscribe<nav_msgs::Odometry>("liovil_sam_smart_smoother/odom_camera", 300,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay()); //usr
 
         //subOdometry = nh.subscribe<nav_msgs::Odometry>("/odom_camera", 300,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay()); //usr
@@ -299,60 +239,6 @@ public:
         
         imuIntegratorImu_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for IMU message thread
         imuIntegratorOpt_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for optimization        
-        imuIntegratorFrame_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for optimization        
-        
-        // ##################################### start  VIO section ##################################
-        std::string imuTopic, frontendTopic, lidarTopic, lcTopic, odomIMU, odomCamera, cameraPoseVisual, cameraPath, landmarkPub; 
-        nh.getParam("vio/frontend_topic", frontendTopic);
-        nh.getParam("vio/odom_camera_rate_topic", odomCamera);
-        nh.getParam("vio/camera_path_publish_topic", cameraPath);
-        
-        // subscribers
-        f_sub = nh.subscribe(frontendTopic, 1000, &IMUPreintegration::frame_callback, this);
-
-        // publishers
-        odom_camera_pub = nh.advertise<nav_msgs::Odometry>(odomCamera, 100);
-        camera_path_pub = nh.advertise<nav_msgs::Path>(cameraPath, 1000);
-
-        // camera and lidar
-        double stereo_fx_, stereo_fy_, stereo_cx_, stereo_cy_, stereo_baseline_; 
-        nh.getParam("vio/fx", stereo_fx_);
-        nh.getParam("vio/fy", stereo_fy_);
-        nh.getParam("vio/cx", stereo_cx_);
-        nh.getParam("vio/cy", stereo_cy_);
-        nh.getParam("vio/baseline", stereo_baseline_);
-
-        // set camera intrinsic
-        Kstereo = gtsam::Cal3_S2Stereo::shared_ptr(new gtsam::Cal3_S2Stereo(stereo_fx_, stereo_fy_, 0, stereo_cx_, stereo_cy_, stereo_baseline_)); 
-
-        // set extrinsics between IMU and left camera
-        std::vector<double> quaternion_I_LC;
-        std::vector<double> position_I_LC;
-        nh.getParam("vio/quat_I_LC", quaternion_I_LC);
-        nh.getParam("vio/posi_I_LC", position_I_LC);
-
-        gtsam::Rot3 cam_rot = gtsam::Rot3::Quaternion(quaternion_I_LC[0], 
-                                                      quaternion_I_LC[1],
-                                                      quaternion_I_LC[2],
-                                                      quaternion_I_LC[3]);
-        gtsam::Point3 cam_trans = gtsam::Point3(position_I_LC[0], 
-                                                position_I_LC[1], 
-                                                position_I_LC[2]);  
-
-        body_P_sensor = gtsam::Pose3(cam_rot, cam_trans);
-
-        // set camera noise
-        double camera_noise_sigma;
-        nh.getParam("vio/camera_sigma", camera_noise_sigma);
-        cam_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, camera_noise_sigma);
-
-        //paramsSF.setEnableEPI(true);
-        //paramsSF.setRankTolerance(0);
-        //
-        //paramsSF.print();
-        
-
-        // ##################################### end  VIO section ##################################
 
     }
 
@@ -368,242 +254,14 @@ public:
 
         gtsam::Values NewGraphValues;
         graphValues = NewGraphValues;
-
-        // ##################################### start VIO section ##################################
-        // set parameter for Smart Factor
-        double distThresh, outlierRejThresh;
-        nh.getParam("vio/landmark_distance_threshold", distThresh);
-        nh.getParam("vio/outlier_rejection_threshold", outlierRejThresh);        
-        paramsSF.setLinearizationMode(gtsam::LinearizationMode::JACOBIAN_SVD); // HESSIAN not implemented?
-        paramsSF.setLandmarkDistanceThreshold(distThresh);
-        paramsSF.setDynamicOutlierRejectionThreshold(outlierRejThresh);
-
-        // set frontend screening parameter: for robustness
-        nh.getParam("vio/robust_feature_ratio", featRatio);
-        double nThru_;
-        nh.getParam("vio/number_frame_tracked", nThru_);
-        N_thru = nThru_;
-        nh.getParam("vio/triangulation_landmark_distance_threshold", triangulationParam.landmarkDistanceThreshold);
-        nh.getParam("vio/triangulation_outlier_rejection_threshold", triangulationParam.dynamicOutlierRejectionThreshold);
-
-        // keeep data
-        Win_keyFrame.clear(); // Kid to keyframe
-        landMarks.clear(); // Lid to landmark
-        candi_feature_pool.clear(); // feature id to candi_feat_info
-        // ##################################### end VIO section ##################################
     }
 
     void resetParams()
     {
         lastImuT_imu = -1;
         doneFirstOpt = false;
-        readKeyFrames = false; //usr
         systemInitialized = false;
-        initd = false;
     }
-        // ##################################### start VIO section ##################################
-        
-    void frame_callback(const liovil_sam::StereoFeatureMatches::ConstPtr& msg) {
-        if (readKeyFrames == false)
-            return;
-
-       // if (inOdometryHandler == true)
-       //     return;
-
-        std::lock_guard<std::mutex> lock(mtx);
-
-        inFrame_callback = true;
-
-        //std::cout<< "Hola frame_callback" << std::endl;
-
-        std::map<uint64_t, bool> whether_robust_feat;
-        // set triangulation camera
-        gtsam::CameraSet<gtsam::PinholeCamera<gtsam::Cal3_S2> > monoCameras;
-        gtsam::PinholeBase::MeasurementVector monoMeasured;
-
-        double currentFrameTime = ROS_TIME(msg);
-
-       
-        // make sure we have imu data to integrate
-        if (imuQueFrame.empty())
-            return;
-        // system initialized, there is a keyframe already
-            // robust feature cover check
-            uint32_t num_feat_thru_N_frame = 0;
-            uint32_t num_feat_as_landmark = 0;
-            uint32_t totalCnt = msg->num_matches;
-
-            // 1. integrate imu data and optimize
-            while (!imuQueFrame.empty())
-            {
-                // pop and integrate imu data that is between last optimized and current frame
-                sensor_msgs::Imu *thisImu = &imuQueFrame.front();
-                double imuTime = ROS_TIME(thisImu);
-                if (imuTime < currentFrameTime - delta_t)
-                {
-                    double dt = (lastImuT_Frame < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_Frame);
-                    imuIntegratorFrame_->integrateMeasurement(
-                            gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
-                            gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
-                    
-                    lastImuT_Frame = imuTime;
-                    imuQueFrame.pop_front();
-                }
-                else
-                    break;
-            }
-
-            gtsam::NavState pred_cur_pose = imuIntegratorFrame_->predict(prevStateOdom, prevBiasOdom);
-            //imuIntegratorFrame_->resetIntegrationAndSetBias(prevBias_);
-
-            // stereo triangulation test
-            const gtsam::Pose3 leftPose = pred_cur_pose.pose().compose(body_P_sensor);
-            const gtsam::Cal3_S2 monoCal = Kstereo->calibration();
-            const gtsam::PinholeCamera<gtsam::Cal3_S2> leftCamera_i(leftPose,monoCal);
-            const gtsam::Pose3 lcam_P_rcam = gtsam::Pose3(gtsam::Rot3(),gtsam::Point3(Kstereo->baseline(),0.0,0.0));
-            const gtsam::Pose3 rightPose = leftPose.compose( lcam_P_rcam );
-            const gtsam::PinholeCamera<gtsam::Cal3_S2> rightCamera_i(rightPose,monoCal);
-            monoCameras.push_back(leftCamera_i);
-            monoCameras.push_back(rightCamera_i);
-            // check robustness score on features, tracked frame and triangulation
-            for (uint32_t i=0; i<totalCnt; i++) {
-                // initialize this robust score
-                whether_robust_feat[msg->feature_ids[i]] = false;
-                // this feature is already in candidate pool
-                if ( candi_feature_pool.find(msg->feature_ids[i])!=candi_feature_pool.end() ) {
-                    candi_feature_pool[msg->feature_ids[i]].numFrame++;
-                    candi_feature_pool[msg->feature_ids[i]].recentFrameID = msg->frame_id-1;
-                    // check if this feature is robust enough
-                    if (candi_feature_pool[msg->feature_ids[i]].numFrame >= N_thru) {
-                        // stereo triangulation
-                        monoMeasured.push_back(gtsam::Point2(msg->left_xs[i],msg->left_ys[i]));
-                        monoMeasured.push_back(gtsam::Point2(msg->right_xs[i],msg->right_ys[i]));
-                        // check stereo triangulation
-                        gtsam::TriangulationResult result =
-                        gtsam::triangulateSafe(monoCameras, monoMeasured, triangulationParam);
-                        // good result gets in
-                        if (result) {
-                            num_feat_thru_N_frame++;
-                            whether_robust_feat[msg->feature_ids[i]] = true;
-                        }
-                        monoMeasured.clear();
-                    }
-                }
-                // this feature is already in local landmark
-                else if ( landMarks.find(msg->feature_ids[i])!=landMarks.end() )
-                    num_feat_as_landmark++;
-                // initialize this feature in candidate pool
-                else
-                    candi_feature_pool[msg->feature_ids[i]] = candi_feat_info(1,msg->frame_id-1);
-            }
-
-            // no IMU info.
-            //if ((pred_cur_pose.t()-last_optimized_state.pose.translation()).norm() == 0)
-            //    return;
-
-            // crate the keyframe
-            keyframe KFtoADD;
-            KFtoADD.timestamp = msg->header.stamp;
-            // add the robust ones to KeyFrmae
-            KFtoADD.landmarkSize = num_feat_thru_N_frame + num_feat_as_landmark;
-            // add in landmarks
-            for (uint32_t i=0; i<totalCnt; i++) {
-                // already in local landmarks
-                if ( landMarks.find(msg->feature_ids[i])!=landMarks.end() ) {
-                    // faeture location
-                    KFtoADD.landLeft.push_back(Eigen::Vector2d(msg->left_xs[i],msg->left_ys[i]));
-                    KFtoADD.landRight.push_back(Eigen::Vector2d(msg->right_xs[i],msg->right_ys[i]));
-                    KFtoADD.LidSet.push_back(msg->feature_ids[i]);
-                    KFtoADD.Lvalid.push_back(true);
-                }
-                // or robust enough
-                else if ( whether_robust_feat[msg->feature_ids[i]] ) {
-                    // faeture location
-                    KFtoADD.landLeft.push_back(Eigen::Vector2d(msg->left_xs[i],msg->left_ys[i]));
-                    KFtoADD.landRight.push_back(Eigen::Vector2d(msg->right_xs[i],msg->right_ys[i]));
-                    KFtoADD.LidSet.push_back(msg->feature_ids[i]);
-                    KFtoADD.Lvalid.push_back(true);
-                    // remove from candidate_feature_pool
-                    candi_feature_pool.erase(msg->feature_ids[i]);
-                }
-            }
-            // create keyframe object
-            keyframeBuffer.push_back(KFtoADD);
-
-            //// add imu factor to graph
-            //const gtsam::PreintegratedImuMeasurements& preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorFrame_);
-            //gtsam::ImuFactor imu_factor(X(key - 1), V(key - 1), X(key), V(key), B(key - 1), preint_imu);
-            //graphFactors.add(imu_factor);
-            //// add imu bias between factor
-            //graphFactors.add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key - 1), B(key), gtsam::imuBias::ConstantBias(),
-            //                 gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegratorFrame_->deltaTij()) * noiseModelBetweenBias)));
-            //// insert predicted values
-            //graphValues.insert(X(key), pred_cur_pose.pose());
-            //graphValues.insert(V(key), pred_cur_pose.v());
-            //graphValues.insert(B(key), prevBias_);
-
-            ////add landmarks stereo
-           //// addStereo_new(currentFrameTime, key); //usr
-            //addSmartStereoFactor(KFtoADD, key);
-
-            //// optimize
-            //optimizer.update(graphFactors, graphValues);
-            //optimizer.update();
-            //optimizer.update();
-            //optimizer.update();
-            //graphFactors.resize(0);
-            //graphValues.clear();
-            //// Overwrite the beginning of the preintegration for the next step.
-            //gtsam::Values result = optimizer.calculateEstimate();
-            //prevPose_  = result.at<gtsam::Pose3>(X(key));
-            //prevVel_   = result.at<gtsam::Vector3>(V(key));
-            //prevState_ = gtsam::NavState(prevPose_, prevVel_);
-            //prevBias_  = result.at<gtsam::imuBias::ConstantBias>(B(key));
-            //// Reset the optimization preintegration object.
-            //imuIntegratorFrame_->resetIntegrationAndSetBias(prevBias_);
-
-            //// check optimization
-            //if (failureDetection(prevVel_, prevBias_))
-            //{
-            //    resetParams();
-            //    return;
-            //}
-
-
-        //// 2. after optiization, re-propagate imu odometry preintegration
-        //prevStateOdom = prevState_;
-        //prevBiasOdom  = prevBias_;
-
-        //// first pop imu message older than current correction data
-        //double lastImuQT = -1;
-        //while (!imuQueImu.empty() && ROS_TIME(&imuQueImu.front()) < currentFrameTime - delta_t)
-        //{
-        //    lastImuQT = ROS_TIME(&imuQueImu.front());
-        //    imuQueImu.pop_front();
-        //}
-        //// repropogate
-        //if (!imuQueImu.empty())
-        //{
-        //    // reset bias use the newly optimized bias
-        //    imuIntegratorImu_->resetIntegrationAndSetBias(prevBiasOdom);
-        //    // integrate imu message from the beginning of this optimization
-        //    for (int i = 0; i < (int)imuQueImu.size(); ++i)
-        //    {
-        //        sensor_msgs::Imu *thisImu = &imuQueImu[i];
-        //        double imuTime = ROS_TIME(thisImu);
-        //        double dt = (lastImuQT < 0) ? (1.0 / 500.0) :(imuTime - lastImuQT);
-
-        //        imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
-        //                                                gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
-        //        lastImuQT = imuTime;
-        //    }
-        //}
-
-        // ++key;
-
-        return;
-    }
-        // ##################################### end VIO section ##################################
 
     void stereoHandler(const nav_msgs::Odometry::ConstPtr& stereoOdom){ //usr3
         std::lock_guard<std::mutex> lock(mtx);
@@ -644,9 +302,7 @@ public:
 
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
-
         std::lock_guard<std::mutex> lock(mtx);
-        //std::cout<<"Hola odometry handler"<< std::endl;
 
         double currentCorrectionTime = ROS_TIME(odomMsg);
        
@@ -710,18 +366,6 @@ public:
                 else
                     break;
             }
-
-            while (!imuQueFrame.empty())
-            {
-                if (ROS_TIME(&imuQueFrame.front()) < currentCorrectionTime - delta_t)
-                {
-                    lastImuT_Frame= ROS_TIME(&imuQueFrame.front());
-                    imuQueFrame.pop_front();
-                }
-                else
-                    break;
-            }
-
             // initial pose
             prevPose_ = lidarPose.compose(lidar2Imu);
             gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise);
@@ -745,20 +389,16 @@ public:
 
             imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
             imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
-            imuIntegratorFrame_->resetIntegrationAndSetBias(prevBias_);
             
             key = 1;
             systemInitialized = true;
-            initd = true;
             return;
         }
 
 
         // reset graph for speed
-        if (key >= 100)
+        if (key == 100)
         {
-            std::cout<<"100 keys frame lidar odometry" << std::endl;
-            readKeyFrames = false; //usr
             // get updated noise before reset
             gtsam::noiseModel::Gaussian::shared_ptr updatedPoseNoise = gtsam::noiseModel::Gaussian::Covariance(optimizer.marginalCovariance(X(key-1)));
             gtsam::noiseModel::Gaussian::shared_ptr updatedVelNoise  = gtsam::noiseModel::Gaussian::Covariance(optimizer.marginalCovariance(V(key-1)));
@@ -784,7 +424,6 @@ public:
             graphValues.clear();
 
             key = 1;
-            //std::cout<<" chao 100 keys frame lidar odometry" << std::endl;
         }
 
 
@@ -827,13 +466,9 @@ public:
         graphValues.insert(X(key), propState_.pose());
         graphValues.insert(V(key), propState_.v());
         graphValues.insert(B(key), prevBias_);
-
-        //add landmarks stereo
-        addStereo_new(currentCorrectionTime, key); //usr
-
-
         // optimize
         optimizer.update(graphFactors, graphValues);
+        optimizer.update();
         graphFactors.resize(0);
         graphValues.clear();
         // Overwrite the beginning of the preintegration for the next step.
@@ -882,10 +517,6 @@ public:
 
         ++key;
         doneFirstOpt = true;
-        readKeyFrames = true; //usr
-
-        //std::cout<<"Key: " << key<< std::endl;  
-        //std::cout<<"chao odometry handler"<< std::endl;
     }
 
     bool failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur)
@@ -906,106 +537,6 @@ public:
         }
 
         return false;
-    }
-    void addStereo_new(double correctionTime, int key_current){ //usr
-        if(keyframeBuffer.empty())
-            return;
-
-        while (!keyframeBuffer.empty())
-        {
-            keyframe current_key_frame(keyframeBuffer.front());
-            
-            double keyFrame_time = current_key_frame.timestamp.toSec();
-
-            if (keyFrame_time < correctionTime - 0.1)
-            {
-                // message too old
-                keyframeBuffer.pop_front();
-            }
-            else if (keyFrame_time > correctionTime + 0.1)
-            {
-                // message too new
-                break;
-            }
-            else
-            {
-                keyframeBuffer.pop_front();
-                addSmartStereoFactor(current_key_frame, key_current);
-                break;
-
-            }
-
-        }
-        return;
-    }
-
-    void addSmartStereoFactor(const keyframe& curr_frame, int key_current) {
-        // add keyframe in sliding window
-        //Win_keyFrame[curr_frame.Kid] = curr_frame;
-        //
-        // Win_keyFrame[key_current] = curr_frame;
-        //
-        // create camera
-        gtsam::CameraSet<gtsam::PinholeCamera<gtsam::Cal3_S2> > monoCameras;
-        //std::vector<gtsam::Point2> monoMeasured;
-        gtsam::PinholeBase::MeasurementVector monoMeasured;
-
-        // get predicted state
-        gtsam::NavState pred_cur_pose = gtsam::NavState(graphValues.at<gtsam::Pose3>(X(key_current)), graphValues.at<gtsam::Vector3>(V(key_current)));
-
-        const gtsam::Pose3 leftPose = pred_cur_pose.pose().compose(body_P_sensor);
-        const gtsam::Cal3_S2 monoCal = Kstereo->calibration();
-        const gtsam::PinholeCamera<gtsam::Cal3_S2> leftCamera_i(leftPose,monoCal);
-        const gtsam::Pose3 lcam_P_rcam = gtsam::Pose3(gtsam::Rot3(),gtsam::Point3(Kstereo->baseline(),0.0,0.0));
-        const gtsam::Pose3 rightPose = leftPose.compose( lcam_P_rcam );
-        const gtsam::PinholeCamera<gtsam::Cal3_S2> rightCamera_i(rightPose,monoCal);
-        monoCameras.push_back(leftCamera_i);
-        monoCameras.push_back(rightCamera_i);
-        // for all features observed
-        for ( uint32_t i=0;i<curr_frame.landmarkSize;i++ ) {
-            // no landmark or this landmark has not appeared before
-            if ( landMarks.empty() || landMarks.find(curr_frame.LidSet[i])==landMarks.end() ) {
-                // create a landmark
-                landmark temp;
-                temp.Win_KidSet.push_back(key_current);
-                temp.Win_KindexSet.push_back(i);
-                temp.Ksize = 1;
-                temp.Win_added = false;
-                temp.Lid = curr_frame.LidSet[i];
-                SmartStereoFactor::shared_ptr ttt(new SmartStereoFactor(cam_noise_model, paramsSF, body_P_sensor));
-                temp.smartfactor = ttt;
-                // stereo triangulation
-                monoMeasured.push_back( gtsam::Point2(curr_frame.landLeft[i](0),curr_frame.landLeft[i](1)) );
-                monoMeasured.push_back( gtsam::Point2(curr_frame.landRight[i](0),curr_frame.landRight[i](1)) );
-                // check stereo triangulation
-                gtsam::TriangulationResult result =
-                gtsam::triangulateSafe(monoCameras, monoMeasured, triangulationParam);
-                if (result)
-                    temp.Position = *result;
-                else
-                    std::cout << "not triangluating at adding smart factor!!\n";
-                monoMeasured.clear();
-                // add measurement to factor
-                temp.smartfactor->add(gtsam::StereoPoint2(curr_frame.landLeft[i](0),curr_frame.landRight[i](0), curr_frame.landLeft[i](1)), X(key_current), Kstereo);
-                // added to hash map
-                landMarks[curr_frame.LidSet[i]] = temp;
-            }
-            // has landmark and this landmark has appeared before
-            else {
-                // add to the factor
-                landMarks[curr_frame.LidSet[i]].smartfactor->add(gtsam::StereoPoint2(curr_frame.landLeft[i](0),curr_frame.landRight[i](0),curr_frame.landLeft[i](1)), X(key_current), Kstereo);
-                landMarks[curr_frame.LidSet[i]].Win_KidSet.push_back(key_current);
-                landMarks[curr_frame.LidSet[i]].Win_KindexSet.push_back(i);
-                landMarks[curr_frame.LidSet[i]].Ksize++;
-                // check if add to the graph
-                if (!landMarks[curr_frame.LidSet[i]].Win_added && landMarks[curr_frame.LidSet[i]].Ksize > 1) {
-                    graphFactors.add(landMarks[curr_frame.LidSet[i]].smartfactor);
-                    landMarks[curr_frame.LidSet[i]].Win_added = true;
-                    ROS_INFO("Land marks added");
-                }
-            }
-        }
-        return;
     }
 
     void addStereoFactor(double correctionTime){ //usr
@@ -1075,7 +606,6 @@ public:
         sensor_msgs::Imu thisImu = imuConverter(*imu_raw); 
         imuQueOpt.push_back(thisImu);
         imuQueImu.push_back(thisImu);
-        imuQueFrame.push_back(thisImu);
 
         if (doneFirstOpt == false)
             return;

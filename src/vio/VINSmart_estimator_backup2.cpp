@@ -17,7 +17,7 @@
     input: FRONTEND: frame ID should start from 1.
 */
 
-//#pragma once
+#pragma once
 
 
 #include <ros/ros.h>
@@ -207,6 +207,7 @@ protected:
     // state
     state_info last_optimized_state;
     gtsam::noiseModel::Diagonal::shared_ptr bias_noise_model;
+    state_info imu_propogation_state;
     // keeep data
     std::map<uint64_t, keyframe> Win_keyFrame; // Kid to keyframe
     std::map<uint64_t, landmark> landMarks; // Lid to landmark
@@ -216,8 +217,10 @@ protected:
     gtsam::Cal3_S2Stereo::shared_ptr Kstereo;
     gtsam::noiseModel::Isotropic::shared_ptr cam_noise_model;
     gtsam::SmartStereoProjectionParams paramsSF;
-    
     // imu factor
+    double gravity;
+    // state Format is (E,N,U,qX,qY,qZ,qW,velE,velN,velU, b?)
+    gtsam::PreintegratedImuMeasurements *imu_preintegrated_; // PreintegratedImuMeasurements (for ImuFactor) or
                                                              // PreintegratedCombinedMeasurements (for CombinedImuFactor).
     gtsam::PreintegratedImuMeasurements *imu_propagation_;
     // fixed lag optimzer
@@ -238,10 +241,7 @@ protected:
     bool initd;
     bool newKeyframe;
     std::queue<keyframe> keyframeBuffer;
-    //TimeBasedRetriever< Eigen::Matrix<double,11,1> > imuMsg;
-
-    TimeBasedRetriever< Eigen::Matrix<double,11,1> > odomImuMsg; //usr
-
+    TimeBasedRetriever< Eigen::Matrix<double,11,1> > imuMsg;
     ros::Time current_frame_time;
     ros::Time last_frame_time;
     ros::Time last_imu_time;
@@ -267,8 +267,8 @@ protected:
 
 public:
     /* Constructor */
-    VINSmart_estimator(ros::NodeHandle& nh) : cameraposevisual(1,0,0,1), initd(false),
-                newKeyframe(false), odomImuMsg(false), last_frame_time(0.0), last_imu_time(0.0), firstIMU(true) {
+    VINSmart_estimator(ros::NodeHandle& nh) : cameraposevisual(1,0,0,1), gravity(9.81), initd(false),
+                newKeyframe(false), imuMsg(false),  last_frame_time(0.0), last_imu_time(0.0), firstIMU(true) {
         //ROS_INFO("\033[1;33m----> HOLA .\033[0m");
         // subscribers and publishers 
         std::string imuTopic, frontendTopic, lidarTopic, lcTopic, odomIMU, odomCamera, cameraPoseVisual, cameraPath, landmarkPub; 
@@ -282,11 +282,9 @@ public:
         nh.getParam("camera_path_publish_topic", cameraPath);
         nh.getParam("landmark_topic", landmarkPub);
         // subscribers
-        //imu_sub = nh.subscribe(imuTopic, 1000, &VINSmart_estimator::imu_callback, this);
-        imu_sub = nh.subscribe(imuTopic, 1000, &VINSmart_estimator::imu_callback, this);        //usr
+        imu_sub = nh.subscribe(imuTopic, 1000, &VINSmart_estimator::imu_callback, this);
         f_sub = nh.subscribe(frontendTopic, 1000, &VINSmart_estimator::frame_callback, this);
         lidar_sub = nh.subscribe(lidarTopic, 1000, &VINSmart_estimator::lidar_callback, this);
-
         // publishers
         odom_imu_pub = nh.advertise<nav_msgs::Odometry>(odomIMU, 100);
         odom_camera_pub = nh.advertise<nav_msgs::Odometry>(odomCamera, 100);
@@ -324,11 +322,6 @@ public:
         gtsam::Point3 cam_trans = gtsam::Point3(position_I_LC[0], 
                                                 position_I_LC[1], 
                                                 position_I_LC[2]);  
-
-        //gtsam::Rot3 cam_rot = gtsam::Rot3::Quaternion(1, 
-        //                                              0,
-        //                                              0,
-        //                                              0);
 
         body_P_sensor = gtsam::Pose3(cam_rot, cam_trans);
         // set extrinsics between IMU and Lidar
@@ -418,6 +411,7 @@ public:
             (gtsam::Vector(6) << statePoseNoiseSigmaOrien, statePoseNoiseSigmaOrien, statePoseNoiseSigmaOrien,
                         statePoseNoiseSigmaTrans, statePoseNoiseSigmaTrans, statePoseNoiseSigmaTrans).finished()); // rad,rad,rad,m, m, m
         last_optimized_state.velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3,stateVelNoiseSigma); // m/s
+        last_optimized_state.bias_noise = bias_noise_model;
         // Use the sensor specs to build the noise model for the IMU factor.
         std::vector<double> accelBiasCov, gyroBiasCov, accelNoiseCov, gyroNoiseCov;
         nh.getParam("accelerameter_noise_cov", accelNoiseCov);
@@ -440,7 +434,28 @@ public:
         double intgrationCov, biaAccOmega;
         nh.getParam("integration_cov_sigma2", intgrationCov);
         nh.getParam("bias_accelermeter_intgration_sigma2", biaAccOmega);
-
+        //std::cout << "************Here***********" << std::endl;
+        p = gtsam::PreintegratedCombinedMeasurements::Params::MakeSharedU(gravity);
+        // acc white noise in continuous
+        p->accelerometerCovariance = accel_noise_cov;
+        // integration uncertainty continuous
+        p->integrationCovariance = gtsam::Matrix33::Identity(3,3) * intgrationCov;
+        // gyro white noise in continuous
+        p->gyroscopeCovariance = gyro_noise_cov;
+        // acc bias in continuous
+        p->biasAccCovariance = accel_bias_cov;
+        // gyro bias in continuous
+        p->biasOmegaCovariance = gyro_bias_cov;
+        // error in the bias used for preintegration
+        p->biasAccOmegaInt = gtsam::Matrix::Identity(6,6) * biaAccOmega;
+        // initialize the pre integration object
+        #ifdef USE_COMBINED
+            imu_preintegrated_ = new gtsam::PreintegratedCombinedMeasurements(p, gtsam::imuBias::ConstantBias(Eigen::Matrix<double,3,1>::Zero(), Eigen::Matrix<double,3,1>::Zero()));
+        #else
+            imu_preintegrated_ = new gtsam::PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias(Eigen::Matrix<double,3,1>::Zero(), Eigen::Matrix<double,3,1>::Zero()));
+        #endif
+        imu_propagation_ = new gtsam::PreintegratedImuMeasurements(p, gtsam::imuBias::ConstantBias(Eigen::Matrix<double,3,1>::Zero(), Eigen::Matrix<double,3,1>::Zero()));
+    	
     }
     // system initialization
     void sysInit(const keyframe& first_keyframe) {
@@ -448,60 +463,51 @@ public:
         current_frame_time = first_keyframe.timestamp;
         // set frame time
         last_frame_time = current_frame_time;
-
-        //// check if there is imu measurement
-        //bool imuSuccess = false;
-        //Eigen::Matrix<double,11,1> initIMUmeasurement = odomImuMsg.GetClosestEntry(current_frame_time, imuSuccess);
-        //// cannot find a closest imu measurement
-        //if (imuSuccess == false){
-        //    kid_counter = 0;
-        //    return;
-
-        //}
-
+        // check if there is imu measurement
+        bool imuSuccess = false;
+        Eigen::Matrix<double,11,1> initIMUmeasurement = imuMsg.GetClosestEntry(current_frame_time, imuSuccess);
+        // cannot find a closest imu measurement
+        if (imuSuccess == false)
+            return;
         // a closest imu measurement is found
-        //Eigen::Quaterniond initialQuat(initIMUmeasurement(7),initIMUmeasurement(8),initIMUmeasurement(9),initIMUmeasurement(10));
-        Eigen::Quaterniond initialQuat(1,0,0,0);
-
+        Eigen::Quaterniond initialQuat(initIMUmeasurement(7),initIMUmeasurement(8),initIMUmeasurement(9),initIMUmeasurement(10));
         // set as initial orientation
         gtsam::Rot3 prior_rotation = gtsam::Rot3::Quaternion(initialQuat.w(),initialQuat.x(),initialQuat.y(),initialQuat.z());
-
         // set as global origin
-        //gtsam::Point3 prior_point(initIMUmeasurement(1), initIMUmeasurement(2), initIMUmeasurement(3));
-        gtsam::Point3 prior_point(0, 0, 0);
-
+        gtsam::Point3 prior_point(0.0,0.0,0.0);
         // set initial pose
         gtsam::Pose3 prior_pose(prior_rotation,prior_point);
         last_optimized_state.pose = prior_pose;
         last_optimized_state.Kid = 0;
-
         // set initial velocity
-        //last_optimized_state.velocity = gtsam::Vector3(initIMUmeasurement(4), initIMUmeasurement(5), initIMUmeasurement(6));
-        last_optimized_state.velocity = gtsam::Vector3(0, 0, 0);
-
+        last_optimized_state.velocity = gtsam::Vector3(0.0,0.0,0.0);
+        // set initial bias to zero
         last_optimized_state.imu_bias = gtsam::imuBias::ConstantBias(Eigen::Matrix<double,3,1>::Zero(), Eigen::Matrix<double,3,1>::Zero());
         // set time
         last_optimized_state.msgtime = current_frame_time;
-
         // output result to file publish camera rate pose
         publish_camera_rate_pose(last_optimized_state);
-
+        // publish imu rate pose
+        imu_propogation_state.msgtime = current_frame_time;
+        imu_propogation_state.pose = last_optimized_state.pose;
+        imu_propogation_state.velocity = last_optimized_state.velocity;
+        imu_propogation_state.imu_bias = last_optimized_state.imu_bias;
+        publish_imu_rate_pose(last_optimized_state);
         // set as initial state
         initial_values.insert(X(first_keyframe.Kid), last_optimized_state.pose);
         initial_values.insert(V(first_keyframe.Kid), last_optimized_state.velocity);
+        initial_values.insert(B(first_keyframe.Kid), last_optimized_state.imu_bias);
         // initialize graph
         // Add all prior factors (pose, velocity, bias) to the graph.
         graph->add(gtsam::PriorFactor<Pose3>(X(first_keyframe.Kid), last_optimized_state.pose, last_optimized_state.pose_noise));
         graph->add(gtsam::PriorFactor<Vector3>(V(first_keyframe.Kid), last_optimized_state.velocity, last_optimized_state.velocity_noise));
-
+        graph->add(gtsam::PriorFactor<imuBias::ConstantBias>(B(first_keyframe.Kid), last_optimized_state.imu_bias, last_optimized_state.bias_noise));
         // Constrain the first pose such that it cannot change from its original value during optimization
         // NOTE: NonlinearEquality forces the optimizer to use QR rather than Cholesky
         // QR is much slower than Cholesky, but numerically more stable
         //graph->push_back(gtsam::NonlinearEquality<Pose3>(X(first_keyframe.Kid),last_optimized_state.pose));
-        
         // add in visual factors
         addSmartStereoFactor(first_keyframe);
-        
         // add in optimizer
         if (useISAM2) {
             // not implemented.
@@ -510,96 +516,103 @@ public:
             // for batch smoother
             keyStateMap[X(first_keyframe.Kid)] = (double)first_keyframe.Kid;
             keyStateMap[V(first_keyframe.Kid)] = (double)first_keyframe.Kid;
-
+            keyStateMap[B(first_keyframe.Kid)] = (double)first_keyframe.Kid;   
             smootherBatch.update(*graph, initial_values, keyStateMap);
             graph->resize(0);
             initial_values.clear();
+            imu_preintegrated_->resetIntegrationAndSetBias(last_optimized_state.imu_bias);
         }
-        odomImuMsg.DeletePrevious(current_frame_time);
-
+        imuMsg.DeletePrevious(current_frame_time);
         // set initd
         std::cout << "system initialization done. " << std::endl;
         initd = true;
         return;
     }
-    // imu callback function 
-    //void imu_callback(const sensor_msgs::Imu::ConstPtr& msg) {
-    void imu_callback(const nav_msgs::Odometry::ConstPtr& msg){  //usr3
+    // imu callback function
+    void imu_callback(const sensor_msgs::Imu::ConstPtr& msg) {
         if (firstIMU) {
             last_frame_time = msg->header.stamp;
             firstIMU = false;
         }
         // initialize a, w, ahrs
-        gtsam::Vector3 velocity, position;
-        Eigen::Quaterniond rotation;
+        gtsam::Vector3 linear_acc, angular_vel;
+        Eigen::Quaterniond ahrs;
         // get linear acceleration
-        float v_x = msg->twist.twist.linear.x;
-        float v_y = msg->twist.twist.linear.y;
-        float v_z = msg->twist.twist.linear.z;
-
-        Eigen::Vector3d V(v_x, v_y, v_z);
-
+        linear_acc(0) = msg->linear_acceleration.x;
+        linear_acc(1) = msg->linear_acceleration.y;
+        linear_acc(2) = msg->linear_acceleration.z;
         // get angular velocity
-        position(0) = msg->pose.pose.position.x;
-        position(1) = msg->pose.pose.position.y;
-        position(2) = msg->pose.pose.position.z;
-
+        angular_vel(0) = msg->angular_velocity.x;
+        angular_vel(1) = msg->angular_velocity.y;
+        angular_vel(2) = msg->angular_velocity.z;
         // get quaternion
-        float q_x = msg->pose.pose.orientation.x;
-        float q_y = msg->pose.pose.orientation.y;
-        float q_z = msg->pose.pose.orientation.z;
-        float q_w = msg->pose.pose.orientation.w;
-
-        // std::vector<double> extRotV{1, 0, 0,        //usr
-        //                        0, -1, 0,        //usr
-        //                        0, 0, -1};       //usr
-        // Eigen::Matrix3d extRot;     //usr
-        // Eigen::Quaterniond extQRPY;     //usr
-        // extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);        //usr
-
-        // extQRPY = Eigen::Quaterniond(extRot);       //usr
-
-        // // rotate roll pitch yaw
-        // Eigen::Quaterniond q_from(q_w, q_x, q_y, q_z);      //usr
-        // Eigen::Quaterniond q_final = q_from * extQRPY;      //usr
-
-        // float r_x = q_final.x();        //usr
-        // float r_y = q_final.y();        //usr
-        // float r_z = q_final.z();        //usr
-        // float r_w = q_final.w();        //usr
-
-        // V= extRot * V;
-
-        // get linear acceleration
-        velocity(0) = V.x();
-        velocity(1) = V.y();
-        velocity(2) = V.z();
-
-        // get quaternion
-        // rotation.x() = r_x;
-        // rotation.y() = r_y;
-        // rotation.z() = r_z;
-        // rotation.w() = r_w;
-
-        rotation.x() = q_x;
-        rotation.y() = q_y;
-        rotation.z() = q_z;
-        rotation.w() = q_w;
-
+        ahrs.x() = msg->orientation.x;
+        ahrs.y() = msg->orientation.y;
+        ahrs.z() = msg->orientation.z;
+        ahrs.w() = msg->orientation.w;
         // add to buffer
         Eigen::Matrix<double,11,1> imuMeasurement;
         // initially last_imu_time = 0
         double delta_t = ((double)msg->header.stamp.toNSec() - (double)last_imu_time.toNSec())/1.0e9;
-
+        //std::cout << std::setprecision(18) << "Last IMU time: " << last_imu_time.toNSec() << " this IMU time: " << msg->header.stamp.toNSec() << "IMU message delta_t: " << delta_t << std::endl;
         last_imu_time = msg->header.stamp;
         // buffer sequence as this
-        imuMeasurement << delta_t, position, velocity, rotation.w(), rotation.x(), rotation.y(), rotation.z();
-
+        imuMeasurement << delta_t, linear_acc , angular_vel, ahrs.w(), ahrs.x(), ahrs.y(), ahrs.z();
         // add add
-        odomImuMsg.AddEntry(msg->header.stamp,imuMeasurement);
+        imuMsg.AddEntry(msg->header.stamp,imuMeasurement);
+        // imu propogation
+        if (initd) {
+            /*
+            // get the delta_t for the imu_propogation
+            double ddt_p = (msg->header.stamp.toNSec() - imu_propogation_state.msgtime.toNSec())/1.0e9;
+            // get transformation
+            Eigen::Matrix3d R_wb = ahrs.normalized().toRotationMatrix();
+            // update acce with bias
+            gtsam::Vector3 tempAcce = linear_acc - imu_propogation_state.imu_bias.accelerometer();
+            // transformation to ENU coordinate
+            tempAcce = R_wb*tempAcce;
+            tempAcce(2) = tempAcce(2)-gravity;
+            // get updated position
+            gtsam::Vector3 position = imu_propogation_state.pose.translation() +
+                                      imu_propogation_state.velocity * ddt_p +
+                                      0.5 * tempAcce * ddt_p * ddt_p;
+
+            // get updated velocity
+            imu_propogation_state.velocity = imu_propogation_state.velocity + tempAcce * ddt_p;
+            // update gyro with bias
+            gtsam::Vector3 tempVel = angular_vel - imu_propogation_state.imu_bias.gyroscope();
+            // transformation to ENU coordinate
+            tempVel = R_wb * tempVel;
+            // integrate the orientation
+            Eigen::Matrix3d w_hat;
+            w_hat << 0, -tempVel(2), tempVel(1),
+                     tempVel(2), 0, -tempVel(0),
+                    -tempVel(1), tempVel(0), 0;
+            w_hat = Eigen::Matrix3d::Identity() + w_hat * ddt_p + 0.5 * w_hat * ddt_p * w_hat * ddt_p;
+            w_hat = w_hat.colwise().normalized();
+            // get updated orientation
+            gtsam::Rot3 tQ(imu_propogation_state.pose.rotation().matrix() * w_hat);
+            // set the result
+            imu_propogation_state.msgtime = msg->header.stamp;
+            imu_propogation_state.pose = gtsam::Pose3(tQ, position);
+            */
+            // use gtsam object to do integration
+            imu_propagation_->integrateMeasurement(Vector3(imuMeasurement[1],imuMeasurement[2],imuMeasurement[3]),
+                                        Vector3(imuMeasurement[4],imuMeasurement[5],imuMeasurement[6]),
+                                        delta_t );
+            // predict current imu pose
+            gtsam::NavState pred_cur_pose = imu_propagation_->
+            predict(gtsam::NavState(last_optimized_state.pose, last_optimized_state.velocity),
+                             last_optimized_state.imu_bias);
+            // set in the object
+            imu_propogation_state.msgtime = msg->header.stamp;
+            imu_propogation_state.pose = pred_cur_pose.pose();
+            imu_propogation_state.velocity = pred_cur_pose.v();
+            // publish the result
+            publish_imu_rate_pose(imu_propogation_state);
+        }
         return;
     }
-
     // frame callback function
     void frame_callback(const liovil_sam::StereoFeatureMatches::ConstPtr& msg) {
         // get time
@@ -687,52 +700,25 @@ public:
             uint32_t num_feat_thru_N_frame = 0;
             uint32_t num_feat_as_landmark = 0;
             uint32_t totalCnt = msg->num_matches;
-            
-            //// get IMU measurement between last keyframe and current frame
-            //bool imuSuccess=false;
-            //ros::Time ttteeee = msg->header.stamp;
-            //std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > > imuMeasurements =
-            //            imuMsg.GetInBetween(last_frame_time, ttteeee, imuSuccess);
-            //// integrate imu measurement
-            //for (std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > >::iterator
-            //            iter=imuMeasurements.begin(); iter!=imuMeasurements.end(); iter++) {
-            //    Eigen::Matrix<double,11,1> imum = iter->second;
-            //    imu_preintegrated_->integrateMeasurement(Vector3(imum[1],imum[2],imum[3]),
-            //                                           Vector3(imum[4],imum[5],imum[6]),
-            //                                           imum[0]);
-            //}
-            //// predict current frame pose by IMU
-            //gtsam::NavState pred_cur_pose = imu_preintegrated_->
-            //predict(gtsam::NavState(last_optimized_state.pose, last_optimized_state.velocity),
-            //                 last_optimized_state.imu_bias);
-            //// clear object
-            //imu_preintegrated_->resetIntegrationAndSetBias(last_optimized_state.imu_bias);
-            
+            // get IMU measurement between last keyframe and current frame
             bool imuSuccess=false;
             ros::Time ttteeee = msg->header.stamp;
-            Eigen::Matrix<double,11,1> initIMUmeasurement = odomImuMsg.GetClosestEntry(ttteeee, imuSuccess);
-        // cannot find a closest imu measurement
-            if (imuSuccess == false){
-                std::cout<< "cannot find a closest odom imu measurement"<<std::endl;
-                return;
+            std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > > imuMeasurements =
+                        imuMsg.GetInBetween(last_frame_time, ttteeee, imuSuccess);
+            // integrate imu measurement
+            for (std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > >::iterator
+                        iter=imuMeasurements.begin(); iter!=imuMeasurements.end(); iter++) {
+                Eigen::Matrix<double,11,1> imum = iter->second;
+                imu_preintegrated_->integrateMeasurement(Vector3(imum[1],imum[2],imum[3]),
+                                                       Vector3(imum[4],imum[5],imum[6]),
+                                                       imum[0]);
             }
-                
-            //gtsam::NavState pred_cur_pose = imu_preintegrated_->
-            // a closest imu measurement is found
-            Eigen::Quaterniond q_usr(initIMUmeasurement(7),initIMUmeasurement(8),initIMUmeasurement(9),initIMUmeasurement(10));
-
-            gtsam::Rot3 r_usr= gtsam::Rot3::Quaternion(q_usr.w(),q_usr.x(),q_usr.y(),q_usr.z());
-            gtsam::Point3 p_usr(initIMUmeasurement(1), initIMUmeasurement(2), initIMUmeasurement(3));
-
-            // set pose
-            gtsam::Pose3 pose_usr(r_usr, p_usr);
-            // set velocity
-            gtsam::Vector3 vel_usr(initIMUmeasurement(4), initIMUmeasurement(5), initIMUmeasurement(6));
-            
-            gtsam::NavState pred_cur_pose(pose_usr, vel_usr);
-
-
-
+            // predict current frame pose by IMU
+            gtsam::NavState pred_cur_pose = imu_preintegrated_->
+            predict(gtsam::NavState(last_optimized_state.pose, last_optimized_state.velocity),
+                             last_optimized_state.imu_bias);
+            // clear object
+            imu_preintegrated_->resetIntegrationAndSetBias(last_optimized_state.imu_bias);
             // stereo triangulation test
             const gtsam::Pose3 leftPose = pred_cur_pose.pose().compose(body_P_sensor);
             const gtsam::Cal3_S2 monoCal = Kstereo->calibration();
@@ -780,7 +766,6 @@ public:
             // no IMU info.
             if ((pred_cur_pose.t()-last_optimized_state.pose.translation()).norm() == 0)
                 return;
-
             // crate the keyframe
             keyframe KFtoADD;
             KFtoADD.timestamp = msg->header.stamp;
@@ -866,10 +851,32 @@ public:
                 }
             }
         }
-        //ROS_INFO("Lidar_in");
         return;
     }
-
+    // this function publishes IMU rate poses
+    void publish_imu_rate_pose(const state_info& imu_rate_pose) {
+        nav_msgs::Odometry odom;
+        odom.header.stamp = imu_rate_pose.msgtime;
+        odom.header.frame_id = "map"; // world usr
+        //set the position
+        odom.pose.pose.position.x = imu_rate_pose.pose.translation()(0);
+        odom.pose.pose.position.y = imu_rate_pose.pose.translation()(1);
+        odom.pose.pose.position.z = imu_rate_pose.pose.translation()(2);
+        //set the orientation
+        odom.pose.pose.orientation.x = imu_rate_pose.pose.rotation().toQuaternion().x();
+        odom.pose.pose.orientation.y = imu_rate_pose.pose.rotation().toQuaternion().y();
+        odom.pose.pose.orientation.z = imu_rate_pose.pose.rotation().toQuaternion().z();
+        odom.pose.pose.orientation.w = imu_rate_pose.pose.rotation().toQuaternion().w();
+        //publish the message
+        odom_imu_pub.publish(odom);
+        // to file
+        gtsam::Vector3 position_rt = imu_rate_pose.pose.translation();
+        gtsam::Vector3 orient_rt = imu_rate_pose.pose.rotation().ypr();
+        outFile_result_rt_imuRate << position_rt(0) << ", " << position_rt(1) << ", " << position_rt(2) << ", "
+                        << orient_rt(0) << ", " << orient_rt(1) << ", " << orient_rt(2) << "\n";
+        outFile_result_rt_imuRate.close();
+        outFile_result_rt_imuRate.open(res_rt_imuRate_Path, std::ios_base::app);
+    }
     // this function publishes camera rate poses
     void publish_camera_rate_pose(const state_info& camera_rate_pose) {
 
@@ -937,10 +944,8 @@ public:
                     // check time
                     current_frame_time = current_key_frame.timestamp;
                     //std::cout << "OPT Frame id: " << current_key_frame.Kid << "\n";
-                    
                     // add imu factor and predict a prior pose
                     addImuFactor(last_frame_time, current_frame_time, current_key_frame.Kid);
-
                     // add stereo factors
                     addSmartStereoFactor(current_key_frame);
                     // calculated time
@@ -950,10 +955,9 @@ public:
                     gttic_(optimizing);
                     optimizer(current_frame_time, current_key_frame.Kid);
                     gttoc_(optimizing);
-
                     //tictoc_print2_();
                     // prepare for next loop
-                    odomImuMsg.DeletePrevious(current_frame_time);
+                    imuMsg.DeletePrevious(current_frame_time);
                     // update smartfactor
                     //clock_t start_u(clock());
                     updateLandMark(current_key_frame.Kid);
@@ -961,14 +965,12 @@ public:
                     //float diff_u( -((float)start_u-(float)clock())/CLOCKS_PER_SEC );
                     //std::cout << "update landmark once time: " << std::setprecision(5) << diff_u*1.0e3 << "ms"<< std::endl;
                     last_frame_time = current_frame_time;
-
-                    //// calculated time
-                    //float diff( -((float)start-(float)clock())/CLOCKS_PER_SEC );
-
-                    ////std::cout << "optimizeLoop once time: " << std::setprecision(5) << diff*1.0e3 << "ms"<< std::endl;
-                    //outFile_time << diff << "\n";
-                    //outFile_time.close();
-                    //outFile_time.open(time_Path, std::ios_base::app);
+                    // calculated time
+                    float diff( -((float)start-(float)clock())/CLOCKS_PER_SEC );
+                    //std::cout << "optimizeLoop once time: " << std::setprecision(5) << diff*1.0e3 << "ms"<< std::endl;
+                    outFile_time << diff << "\n";
+                    outFile_time.close();
+                    outFile_time.open(time_Path, std::ios_base::app);
                 }
             }
             //ros::spinOnce();
@@ -978,73 +980,47 @@ public:
     }
     // extract imu measurements and add as factor
     void addImuFactor(ros::Time last_frame_time, ros::Time current_frame_time, uint64_t curr_id) {
-        //// get IMU measurement between last and current frame
-        //bool imuSuccess=false;
-        //std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > > imuMeasurements =
-        //            imuMsg.GetInBetween(last_frame_time, current_frame_time, imuSuccess);
-        //// debug
-        ////std::cout << "Total: " << imuMeasurements.size() << " imu measurements " << "\n";
-        //// integrate imu measurement
-        //for (std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > >::iterator
-        //            iter=imuMeasurements.begin(); iter!=imuMeasurements.end(); iter++) {
-        //    Eigen::Matrix<double,11,1> imum = iter->second;
-        //    imu_preintegrated_->integrateMeasurement(gtsam::Vector3(imum[1],imum[2],imum[3]),
-        //                                           gtsam::Vector3(imum[4],imum[5],imum[6]),
-        //                                           imum[0]);
-        //}
-        //// add imu factor
-        //#ifdef USE_COMBINED
-        //    gtsam::PreintegratedCombinedMeasurements *preint_imu_combined = dynamic_cast<gtsam::PreintegratedCombinedMeasurements*>(imu_preintegrated_);
-        //    gtsam::CombinedImuFactor imu_factor(X(curr_id-1), V(curr_id-1),
-        //                                 X(curr_id  ), V(curr_id  ),
-        //                                 B(curr_id-1), B(curr_id  ),
-        //                                 *preint_imu_combined);
-        //    graph->add(imu_factor);
-        //#else
-        //    gtsam::PreintegratedImuMeasurements *preint_imu = dynamic_cast<gtsam::PreintegratedImuMeasurements*>(imu_preintegrated_);
-        //    gtsam::ImuFactor imu_factor(X(curr_id-1), V(curr_id-1),
-        //                         X(curr_id  ), V(curr_id  ),
-        //                         B(curr_id-1),
-        //                         *preint_imu);
-        //    graph->add(imu_factor);
-        //    gtsam::imuBias::ConstantBias zero_bias(gtsam::Vector3(0, 0, 0), gtsam::Vector3(0, 0, 0));
-        //    graph->add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(curr_id-1),
-        //                                                    B(curr_id  ),
-        //                                                    zero_bias, bias_noise_model));
-        //#endif
-        //// predict an initial estimate by IMU
-        //gtsam::NavState prop_state = imu_preintegrated_->predict(gtsam::NavState(last_optimized_state.pose, last_optimized_state.velocity), last_optimized_state.imu_bias);
-
+        // get IMU measurement between last and current frame
         bool imuSuccess=false;
-        Eigen::Matrix<double,11,1> initIMUmeasurement = odomImuMsg.GetClosestEntry(current_frame_time, imuSuccess);
-        if (imuSuccess == false){
-            std::cout<< "cannot find a closest odom imu measurement ---> addIMU";
-            return;
+        std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > > imuMeasurements =
+                    imuMsg.GetInBetween(last_frame_time, current_frame_time, imuSuccess);
+        // debug
+        //std::cout << "Total: " << imuMeasurements.size() << " imu measurements " << "\n";
+        // integrate imu measurement
+        for (std::vector< std::pair< ros::Time,Eigen::Matrix<double,11,1> > >::iterator
+                    iter=imuMeasurements.begin(); iter!=imuMeasurements.end(); iter++) {
+            Eigen::Matrix<double,11,1> imum = iter->second;
+            imu_preintegrated_->integrateMeasurement(gtsam::Vector3(imum[1],imum[2],imum[3]),
+                                                   gtsam::Vector3(imum[4],imum[5],imum[6]),
+                                                   imum[0]);
         }
-            
-        //gtsam::NavState pred_cur_pose = imu_preintegrated_->
-        // a closest imu measurement is found
-        Eigen::Quaterniond q_usr(initIMUmeasurement(7),initIMUmeasurement(8),initIMUmeasurement(9),initIMUmeasurement(10));
-
-        gtsam::Rot3 r_usr= gtsam::Rot3::Quaternion(q_usr.w(),q_usr.x(),q_usr.y(),q_usr.z());
-        gtsam::Point3 p_usr(initIMUmeasurement(1), initIMUmeasurement(2), initIMUmeasurement(3));
-
-        // set pose
-        gtsam::Pose3 pose_usr(r_usr, p_usr);
-        // set velocity
-        gtsam::Vector3 vel_usr(initIMUmeasurement(4), initIMUmeasurement(5), initIMUmeasurement(6));
-        
-        gtsam::NavState pred_cur_pose(pose_usr, vel_usr);
-
-        graph->add(gtsam::PriorFactor<Pose3>(X(curr_id), pose_usr, last_optimized_state.pose_noise));
-        graph->add(gtsam::PriorFactor<Vector3>(V(curr_id), vel_usr, last_optimized_state.velocity_noise));
-
-
-        initial_values.insert(X(curr_id), pose_usr);
-        initial_values.insert(V(curr_id), vel_usr);
-        if (initIMUmeasurement.size()==0)
+        // add imu factor
+        #ifdef USE_COMBINED
+            gtsam::PreintegratedCombinedMeasurements *preint_imu_combined = dynamic_cast<gtsam::PreintegratedCombinedMeasurements*>(imu_preintegrated_);
+            gtsam::CombinedImuFactor imu_factor(X(curr_id-1), V(curr_id-1),
+                                         X(curr_id  ), V(curr_id  ),
+                                         B(curr_id-1), B(curr_id  ),
+                                         *preint_imu_combined);
+            graph->add(imu_factor);
+        #else
+            gtsam::PreintegratedImuMeasurements *preint_imu = dynamic_cast<gtsam::PreintegratedImuMeasurements*>(imu_preintegrated_);
+            gtsam::ImuFactor imu_factor(X(curr_id-1), V(curr_id-1),
+                                 X(curr_id  ), V(curr_id  ),
+                                 B(curr_id-1),
+                                 *preint_imu);
+            graph->add(imu_factor);
+            gtsam::imuBias::ConstantBias zero_bias(gtsam::Vector3(0, 0, 0), gtsam::Vector3(0, 0, 0));
+            graph->add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(curr_id-1),
+                                                            B(curr_id  ),
+                                                            zero_bias, bias_noise_model));
+        #endif
+        // predict an initial estimate by IMU
+        gtsam::NavState prop_state = imu_preintegrated_->predict(gtsam::NavState(last_optimized_state.pose, last_optimized_state.velocity), last_optimized_state.imu_bias);
+        initial_values.insert(X(curr_id), prop_state.pose());
+        initial_values.insert(V(curr_id), prop_state.v());
+        initial_values.insert(B(curr_id), last_optimized_state.imu_bias);
+        if (imuMeasurements.size()==0)
             initial_values.print();
-
         return;
     }
     // Add stereo structureless vision factor (smart stereo factor)
@@ -1127,7 +1103,7 @@ public:
             // for batch smoother
             keyStateMap[X(curr_id)] = (double)curr_id;
             keyStateMap[V(curr_id)] = (double)curr_id;
-           // keyStateMap[B(curr_id)] = (double)curr_id;
+            keyStateMap[B(curr_id)] = (double)curr_id;
             // should be good ...
             smootherBatch.update(*graph, initial_values, keyStateMap);
             // obtain value
@@ -1141,9 +1117,12 @@ public:
         // store the result
         last_optimized_state.Kid = curr_id;
         last_optimized_state.msgtime = cur_f_time;
+        last_optimized_state.imu_bias = post_values.at<gtsam::imuBias::ConstantBias>(B(curr_id));
         last_optimized_state.pose = post_values.at<gtsam::Pose3>(X(curr_id));
         last_optimized_state.velocity = post_values.at<gtsam::Vector3>(V(curr_id));
-
+        // reset imu_preintegration and imu_propagation
+        imu_preintegrated_->resetIntegrationAndSetBias(last_optimized_state.imu_bias);
+        imu_propagation_->resetIntegrationAndSetBias(last_optimized_state.imu_bias);
         // publish camera rate pose and to file
         publish_camera_rate_pose(last_optimized_state);
         return;
@@ -1162,33 +1141,26 @@ public:
             liovil_sam::landmarks landmarks_msg;
             landmarks_msg.header.stamp = toMargiKeyframe.timestamp; 
             landmarks_msg.frame_id = toMargiKeyframe.Kid;
-            //ROS_INFO("before for loop margin landmark");
-
             // check robustness and add in the message
-            //for (uint32_t i=0; i<toMargiKeyframe.landmarkSize; i++) {
-            //    gtsam::TriangulationResult result = landMarks[toMargiKeyframe.LidSet[i]].smartfactor->point();
-            //    ROS_INFO("after TriangulationResult");
-            //    //std::cout << "triangluate result: " << result << std::endl;
-            //    if (result) {
-            //        landmarks_msg.feature_ids.push_back(toMargiKeyframe.LidSet[i]);
-            //        landmarks_msg.leftPixel_xs.push_back(toMargiKeyframe.landLeft[i](0));
-            //        landmarks_msg.leftPixel_ys.push_back(toMargiKeyframe.landLeft[i](1));
-            //        landmarks_msg.location_x.push_back(result->x());
-            //        landmarks_msg.location_y.push_back(result->y());
-            //        landmarks_msg.location_z.push_back(result->z());
-            //    }
-            //}
-            //ROS_INFO("before publishing");
-            //landmarks_msg.size = landmarks_msg.feature_ids.size();
-            //landmark_pub.publish(landmarks_msg);
-
-
+            for (uint32_t i=0; i<toMargiKeyframe.landmarkSize; i++) {
+                gtsam::TriangulationResult result = landMarks[toMargiKeyframe.LidSet[i]].smartfactor->point();
+                //std::cout << "triangluate result: " << result << std::endl;
+                if (result) {
+                    landmarks_msg.feature_ids.push_back(toMargiKeyframe.LidSet[i]);
+                    landmarks_msg.leftPixel_xs.push_back(toMargiKeyframe.landLeft[i](0));
+                    landmarks_msg.leftPixel_ys.push_back(toMargiKeyframe.landLeft[i](1));
+                    landmarks_msg.location_x.push_back(result->x());
+                    landmarks_msg.location_y.push_back(result->y());
+                    landmarks_msg.location_z.push_back(result->z());
+                }
+            }
+            landmarks_msg.size = landmarks_msg.feature_ids.size();
+            landmark_pub.publish(landmarks_msg);
             // update all landmarks observed in this keyframe
             for (uint32_t i=0; i<toMargiKeyframe.landmarkSize; i++) {
                 // see if this landmark is still valid in this frame
-                if (!toMargiKeyframe.Lvalid[i]){
+                if (!toMargiKeyframe.Lvalid[i])
                     continue;
-                }
                 // Lid corresponds to this feature
                 uint32_t tempLid = toMargiKeyframe.LidSet[i];
                 if ( landMarks.find(tempLid)!=landMarks.end() ) {

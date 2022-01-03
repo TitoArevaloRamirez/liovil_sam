@@ -1,6 +1,4 @@
 #include "utility.h"
-#include "utility_vio.h"
-
 #include "liovil_sam/cloud_info.h"
 #include "liovil_sam/save_map.h"
 
@@ -18,9 +16,6 @@
 #include <gtsam/inference/Symbol.h>
 
 #include <gtsam/nonlinear/ISAM2.h>
-
-
-
 
 using namespace gtsam;
 
@@ -81,14 +76,10 @@ public:
     ros::Subscriber subCloud;
     ros::Subscriber subGPS;
     ros::Subscriber subLoop;
-    ros::Subscriber f_sub;      //usr_vio
-
-    //ros::Subscriber subStereo;  //usr
 
     ros::ServiceServer srvSaveMap;
 
     std::deque<nav_msgs::Odometry> gpsQueue;
-    std::deque<nav_msgs::Odometry> stereoQueue;  //usr
     liovil_sam::cloud_info cloudInfo;
 
     vector<pcl::PointCloud<PointType>::Ptr> cornerCloudKeyFrames;
@@ -160,38 +151,9 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
-    //
-    // ############################ VIO Section ######################
-    //
-    
-    bool initd;
-    bool newKeyframe;
-    std::queue<keyframe> keyframeBuffer;
 
-    // keeep data
-    std::map<uint64_t, keyframe> Win_keyFrame; // Kid to keyframe
-    std::map<uint64_t, landmark> landMarks; // Lid to landmark
-    std::map<uint64_t, candi_feat_info> candi_feature_pool; // feature id to candi_feat_info
-    
-    // smart factor
-    gtsam::Pose3 body_P_sensor; // left camera to IMU
-    gtsam::Cal3_S2Stereo::shared_ptr Kstereo;
-    gtsam::noiseModel::Isotropic::shared_ptr cam_noise_model;
-    gtsam::SmartStereoProjectionParams paramsSF;
-
-    // robustness
-    double featRatio;
-    uint64_t N_thru;
-    gtsam::TriangulationParameters triangulationParam;
-
-    std::string frontendTopic;
-
-    //
-    // ############################ Map Optimization ######################
-    //
     mapOptimization()
     {
-        //std::cout<< "Hola map optimization" << std::endl;
         ISAM2Params parameters;
         parameters.relinearizeThreshold = 0.1;
         parameters.relinearizeSkip = 1;
@@ -204,71 +166,10 @@ public:
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
 
         subCloud = nh.subscribe<liovil_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
-
         subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 200, &mapOptimization::gpsHandler, this, ros::TransportHints().tcpNoDelay());
-        //
-        //subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &mapOptimization::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
-        //
         subLoop  = nh.subscribe<std_msgs::Float64MultiArray>("lio_loop/loop_closure_detection", 1, &mapOptimization::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
 
         srvSaveMap  = nh.advertiseService("lio_sam/save_map", &mapOptimization::saveMapService, this);
-
-    //
-    // ############################ VIO Section ######################
-    // read VIO parameters
-    //:initd(false), newKeyframe(false)
-        initd = false;
-        newKeyframe = false;
-
-        nh.getParam("vio/frontend_topic", frontendTopic);
-        //std::cout<< frontendTopic << std::endl;
-
-        //f_sub = nh.subscribe(frontendTopic, 1000, &mapOptimization::frame_callback, this);
-        
-        // camera and lidar
-        double stereo_fx_, stereo_fy_, stereo_cx_, stereo_cy_, stereo_baseline_; 
-        nh.getParam("vio/fx", stereo_fx_);
-        nh.getParam("vio/fy", stereo_fy_);
-        nh.getParam("vio/cx", stereo_cx_);
-        nh.getParam("vio/cy", stereo_cy_);
-        nh.getParam("vio/baseline", stereo_baseline_);
-
-        // set camera intrinsic
-        Kstereo = gtsam::Cal3_S2Stereo::shared_ptr(new gtsam::Cal3_S2Stereo(stereo_fx_, stereo_fy_, 0, stereo_cx_, stereo_cy_, stereo_baseline_)); 
-        // set extrinsics between IMU and left camera
-        std::vector<double> quaternion_I_LC;
-        std::vector<double> position_I_LC;
-        nh.getParam("vio/quat_I_LC", quaternion_I_LC);
-        nh.getParam("vio/posi_I_LC", position_I_LC);
-
-        gtsam::Rot3 cam_rot = gtsam::Rot3::Quaternion(quaternion_I_LC[0], 
-                                                      quaternion_I_LC[1],
-                                                      quaternion_I_LC[2],
-                                                      quaternion_I_LC[3]);
-        gtsam::Point3 cam_trans = gtsam::Point3(position_I_LC[0], 
-                                                position_I_LC[1], 
-                                                position_I_LC[2]);  
-
-        // set camera noise
-        double camera_noise_sigma;
-        nh.getParam("vio/camera_sigma", camera_noise_sigma);
-        cam_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, camera_noise_sigma);
-
-        double distThresh, outlierRejThresh;
-        nh.getParam("vio/landmark_distance_threshold", distThresh);
-        nh.getParam("vio/outlier_rejection_threshold", outlierRejThresh);        
-        
-        // set frontend screening parameter: for robustness
-        nh.getParam("robust_feature_ratio", featRatio);
-        double nThru_;
-        nh.getParam("number_frame_tracked", nThru_);
-        N_thru = nThru_;
-        nh.getParam("triangulation_landmark_distance_threshold", triangulationParam.landmarkDistanceThreshold);
-        nh.getParam("triangulation_outlier_rejection_threshold", triangulationParam.dynamicOutlierRejectionThreshold);
-        
-    //
-    // ############################ VIO Section ######################
-    //
 
         pubHistoryKeyFrames   = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_history_cloud", 1);
         pubIcpKeyFrames       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_corrected_cloud", 1);
@@ -363,44 +264,6 @@ public:
 
             publishFrames();
         }
-    }
-
-    void frame_callback(const liovil_sam::StereoFeatureMatches::ConstPtr& msg) {
-        //std::cout<<"Hola frame callback"<<std::endl;
-        return;
-    }
-
-
-    void stereoHandler(const nav_msgs::Odometry::ConstPtr& stereoOdom){ //usr3
-        nav_msgs::Odometry thisStereo = *stereoOdom;
-        // set the orientation
-        float q_x = stereoOdom->pose.pose.orientation.x;     //usr
-        float q_y = stereoOdom->pose.pose.orientation.y;     //usr
-        float q_z = stereoOdom->pose.pose.orientation.z;     //usr
-        float q_w = stereoOdom->pose.pose.orientation.w;     //usr
-
-        std::vector<double> extRotV{1, 0, 0,        //usr
-                               0, -1, 0,        //usr
-                               0, 0, -1};       //usr
-        Eigen::Matrix3d extRot;     //usr
-        Eigen::Quaterniond extQRPY;     //usr
-        extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);        //usr
-        extQRPY = Eigen::Quaterniond(extRot);       //usr
-        // rotate roll pitch yaw
-        Eigen::Quaterniond q_from(q_w, q_x, q_y, q_z);      //usr
-        Eigen::Quaterniond q_final = q_from * extQRPY;      //usr
-        
-        float r_x = q_final.x();        //usr
-        float r_y = q_final.y();        //usr
-        float r_z = q_final.z();        //usr
-        float r_w = q_final.w();        //usr
-
-        thisStereo.pose.pose.orientation.x = r_x;
-        thisStereo.pose.pose.orientation.y = r_y;
-        thisStereo.pose.pose.orientation.z = r_z;
-        thisStereo.pose.pose.orientation.w = r_w;
-
-        stereoQueue.push_back(thisStereo);
     }
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
@@ -1521,67 +1384,6 @@ public:
         }
     }
 
-    void addStereoFactor(){ //usr
-        if(stereoQueue.empty())
-            return;
-        if (cloudKeyPoses3D->points.empty())
-            return;
-
-        while (!stereoQueue.empty())
-        {
-            if (stereoQueue.front().header.stamp.toSec() < timeLaserInfoCur - 0.5)
-            {
-                // message too old
-                stereoQueue.pop_front();
-            }
-            else if (stereoQueue.front().header.stamp.toSec() > timeLaserInfoCur + 0.1)
-            {
-                // message too new
-                break;
-            }
-            else
-            {
-                nav_msgs::Odometry thisStereo = stereoQueue.front();
-                stereoQueue.pop_front();
-
-                // GPS too noisy, skip
-                float noise_x = thisStereo.pose.covariance[0];
-                float noise_y = thisStereo.pose.covariance[7];
-                float noise_z = thisStereo.pose.covariance[14];
-
-                float noise_roll = thisStereo.pose.covariance[21];
-                float noise_pitch = thisStereo.pose.covariance[28];
-                float noise_yaw = thisStereo.pose.covariance[35];
-                //if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
-                //    continue;
-
-                float p_x = thisStereo.pose.pose.position.x;
-                float p_y = thisStereo.pose.pose.position.y;
-                float p_z = thisStereo.pose.pose.position.z;
-
-                float q_x = thisStereo.pose.pose.orientation.x;
-                float q_y = thisStereo.pose.pose.orientation.y;
-                float q_z = thisStereo.pose.pose.orientation.z;
-                float q_w = thisStereo.pose.pose.orientation.w;
-
-                gtsam::Vector Vector6(6);
-                //Vector6 << max(noise_roll, 1.0f), max(noise_pitch, 1.0f), max(noise_yaw, 1.0f), max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
-                Vector6 << 0.5, 0.5, 0.5, 0.1, 0.1, 0.1;
-                noiseModel::Diagonal::shared_ptr stereo_noise = noiseModel::Diagonal::Variances(Vector6);
-                
-                gtsam::Pose3 stereoPose = gtsam::Pose3(gtsam::Rot3::Quaternion(q_w, q_x, q_y, q_z), gtsam::Point3(p_x, p_y, p_z));
-
-                gtsam::PriorFactor<gtsam::Pose3> stereo_factor(cloudKeyPoses3D->size(), stereoPose, stereo_noise);
-                gtSAMgraph.add(stereo_factor);
-
-                std::cout << "\033[1;32m----> stereo factor added \033[0m" << std::endl;
-                std::cout << "\033[1;32m----> stereo factor added \033[0m" << std::endl;
-                std::cout << "\033[1;32m----> stereo factor added \033[0m" << std::endl;
-                break;
-            }
-        }
-
-    }
     void addGPSFactor()
     {
         if (gpsQueue.empty())
@@ -1689,9 +1491,6 @@ public:
 
         // odom factor
         addOdomFactor();
-        
-        // stereo factor
-        //addStereoFactor();  //usr
 
         // gps factor
         addGPSFactor();
@@ -1935,7 +1734,7 @@ int main(int argc, char** argv)
 
     mapOptimization MO;
 
-    ROS_INFO("\033[1;36m\n >>> Map Optimization Started <<< \033[0m");
+    ROS_INFO("\033[1;32m----> Map Optimization Started.\033[0m");
     
     std::thread loopthread(&mapOptimization::loopClosureThread, &MO);
     std::thread visualizeMapThread(&mapOptimization::visualizeGlobalMapThread, &MO);
