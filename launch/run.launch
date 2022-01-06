@@ -1,0 +1,78 @@
+<launch>
+
+    <arg name="project" default="liovil_sam"/>
+    
+    <!-- Parameters 
+    -->
+    <rosparam file="$(find liovil_sam)/config/params.yaml" command="load" />
+
+    <!--- Robot State TF 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_robot_state_publisher.launch" />
+
+    <!--- Run Navsat 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_navsat.launch" />
+
+    <!--- Run gps frame_ID 
+    -->
+    <node pkg="$(arg project)" type="gps_renameFrameID.py" name="$(arg project)_renameGPS_FrameID" output="screen">
+        <remap from="/gps_save" to="/dji_sdk/gps_position" />
+    </node>
+
+    <!--- Run camera_info edit 
+    -->
+    <node pkg="$(arg project)" type="camInfo_edit.py" name="$(arg project)_camInfo_edit" respawn="true" output="screen">
+        <remap from="left/camera_info" to="/mapping/left/camera_info" />
+        <remap from="right/camera_info" to="/mapping/right/camera_info" />
+    </node>
+
+    <!--- Visual Frontend 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_visual_frontend.launch" />
+
+    <!--- VIO 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_vio.launch" />
+
+    <!--- LOAM 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_loam.launch" />
+
+    <!--- Save Point Cloud Map 
+    <node pkg="$(arg project)" type="vlp16_points_listener.py" name="$(arg project)_listenSave_ptCloudMap" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag/Data/MappingResults/PointCloud/"/>
+        <remap from="/ptCloud_save" to="/lio_sam/mapping/map_global" />
+    </node>
+    -->
+
+    <!--- Save Odometry GPS 
+    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_NavSat" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_gps/"/>
+        <remap from="/odom_save" to="/odometry/gps" />
+    </node>
+    -->
+
+    <!--- Save Odometry LiDAR 
+    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_LiDAR" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_lidar/"/>
+        <remap from="/odom_save" to="/lio_sam/mapping/odometry" />
+    </node>
+    -->
+
+    <!--- Save Odometry Camera 
+    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_Camera" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_camera/"/>
+        <remap from="/odom_save" to="/liovil_sam_smart_smoother/odom_camera" />
+    </node>
+    -->
+
+    <!--- Run Rviz 
+    <include file="$(find liovil_sam)/launch/include/module_rviz.launch" />
+    -->
+
+    <!--- Run Rviz 2
+    <include file="$(find liovil_sam)/launch/include/module_rviz2.launch" />
+    -->
+
+</launch>

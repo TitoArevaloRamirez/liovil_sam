@@ -1,0 +1,11 @@
+<launch>
+
+    <arg name="project" default="liovil_sam"/>
+    
+    <!-- Parameters 
+    -->
+    <rosparam file="$(find liovil_sam)/config/params.yaml" command="load" />
+
+    <node pkg="$(arg project)" type="$(arg project)_featureExtraction"   name="$(arg project)_featureExtraction"    output="screen"     respawn="false"/>
+    
+</launch>

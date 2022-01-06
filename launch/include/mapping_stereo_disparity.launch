@@ -1,0 +1,58 @@
+<!-- 
+/*v1*************************************************************************************/
+/* This is developed at Carnegie Mellon University in collaboration with Autel Robotics */
+/*                                                                                      */
+/* PI:                                                                                  */
+/* George Kantor                                                                        */
+/*                                                                                      */
+/* Authors:                                                                             */ 
+/* Weizhao Shao                                                                         */
+/* Cong Li                                                                              */
+/* Srinivasan Vijayarangan                                                              */
+/*                                                                                      */
+/* Please refer to the contract document for details on license/copyright information.  */
+/****************************************************************************************/
+-->
+<launch>
+
+  <group ns="mapping">
+  <node pkg="nodelet" type="nodelet" args="manager" name="mapping_stereo_manager" />
+
+  <node pkg="nodelet" type="nodelet"
+	args="load stereo_image_proc/disparity stereo_manager"
+	name="stereo_image_proc_disparity">
+
+    <param name="stereo_algorithm" value="1" />
+    <param name="queue_size" value="10" />
+    <param name="approximate_sync" value="true" />
+
+    <!--
+    <remap from="left/image_rect" to="/mapping/left/image_rect" />
+    <remap from="right/image_rect" to="/mapping/right/image_rect" />
+    <remap from="left/camera_info" to="/mapping/left/camera_info" />
+    <remap from="right/camera_info" to="/mapping/right/camera_info" />
+
+<remap from="disparity" to="mapping/stereo/disparity" />
+    -->
+    
+  </node>
+
+  <node pkg="nodelet" type="nodelet"
+	args="load stereo_image_proc/point_cloud2 stereo_manager"
+	name="stereo_image_proc_pointcloud2">
+
+    <param name="approximate_sync" value="True" />
+
+    <!-- 
+    <remap from="disparity" to="/mapping/stereo/disparity" />
+    <remap from="left/image_rect_color" to="/mapping/left/image_rect_color" />
+    <remap from="left/camera_info" to="/mapping/left/camera_info" />
+    <remap from="right/camera_info" to="/mapping/right/camera_info" />
+
+<remap from="points2" to="/mapping/stereo/point2" />
+-->
+    </node>
+    
+  </group>
+  
+</launch>

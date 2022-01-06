@@ -1,0 +1,12 @@
+<launch>
+  <arg name="project" default="liovil_sam"/>
+
+  <!-- visualization frontend matches
+  -->
+  <node name="$(arg project)_show_frame_node" pkg="$(arg project)" type="$(arg project)_show_frame_node" output="screen"/>
+
+  <!--- Run Rviz
+  -->
+    <node pkg="rviz" type="rviz" name="$(arg project)_rviz" args="-d $(find liovil_sam)/launch/include/config/rviz.rviz" />
+
+</launch>

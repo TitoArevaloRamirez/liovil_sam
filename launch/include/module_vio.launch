@@ -1,0 +1,11 @@
+<launch>
+  <arg name="project" default="liovil_sam"/>
+
+  <!-- vio node -->
+  <arg name="vio_config" default = "$(find liovil_sam)/config/vio.yaml" />
+  <node name="$(arg project)_smart_smoother"  pkg="$(arg project)" type="$(arg project)_smart_smoother" cwd="node" output="screen">
+        <rosparam command="load" file="$(arg vio_config)" />
+  </node>
+
+</launch>
+
