@@ -167,6 +167,8 @@ public:
 
     ros::Publisher pubImuOdometry;
 
+    ros::Subscriber subGPS;
+
 
     bool systemInitialized = false;
 
@@ -193,6 +195,7 @@ public:
     gtsam::NavState prevState_;
     gtsam::imuBias::ConstantBias prevBias_;
 
+
     gtsam::NavState prevStateOdom;
     gtsam::imuBias::ConstantBias prevBiasOdom;
 
@@ -217,6 +220,10 @@ public:
 
     gtsam::Pose3 camera2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(0.0870551272380779, -0.107604788194452, 0.0180391607070435));
 
+    gtsam::Pose3 initialPose;
+    bool existInitialPose = false;
+
+
 
     IMUPreintegration(){
 
@@ -230,6 +237,7 @@ public:
         //subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
         //
         //
+        //subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 2000, &IMUPreintegration::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         subStereo = nh.subscribe<nav_msgs::Odometry> ("liovil_sam_smart_smoother/odom_camera", 2000, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
 
         pubImuOdometry = nh.advertise<nav_msgs::Odometry> (odomTopic+"_incremental", 2000);
@@ -275,6 +283,37 @@ public:
         systemInitialized = false;
     }
 
+    void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
+    {
+        //gpsQueue.push_back(*gpsMsg);
+
+        if(existInitialPose == false){
+            static int gpsCounter = 1;
+            static float p_x_sum = 0;
+            static float p_y_sum = 0;
+            static float p_z_sum = 0;
+            
+            float p_x = gpsMsg->pose.pose.position.x;      //usr
+            float p_y = gpsMsg->pose.pose.position.y;      //usr
+            float p_z = gpsMsg->pose.pose.position.z;      //usr
+
+            p_x_sum += p_x;
+            p_y_sum += p_y;
+            p_z_sum += p_z;
+
+            if (gpsCounter == 10){
+                p_x = p_x_sum/10;
+                p_y = p_y_sum/10;
+                p_y = p_z_sum/10;
+
+                initialPose = gtsam::Pose3(gtsam::Rot3::Quaternion(1.0, 0, 0, 0), gtsam::Point3(p_x, p_y, p_z)); 
+                existInitialPose = true;
+                ROS_INFO("\033[1;34m\n--->Map Optimizationi :\033[0m Average initial pose computed!");
+            }
+
+            ++gpsCounter;
+        }
+    }
     void stereoHandler(const nav_msgs::Odometry::ConstPtr& stereoOdom){ //usr3
         std::lock_guard<std::mutex> lock(mtx);
 
@@ -319,6 +358,7 @@ public:
         //std::cout<<"Hola odometry handler"<< std::endl;
 
         double currentCorrectionTime = ROS_TIME(odomMsg);
+
        
         // make sure we have imu data to integrate
         if (imuQueOpt.empty())
@@ -369,6 +409,16 @@ public:
         {
             resetOptimization();
 
+            float roll_mean, pitch_mean, yaw_mean;
+            float qx, qy, qz, qw;
+            int imu_counter;
+
+            qx=0;
+            qy=0;
+            qz=0;
+            qw=0;
+            imu_counter=1;
+
             // pop old IMU message
             while (!imuQueOpt.empty())
             {
@@ -376,24 +426,37 @@ public:
                 {
                     lastImuT_opt = ROS_TIME(&imuQueOpt.front());
                     imuQueOpt.pop_front();
+
+                    sensor_msgs::Imu *thisImu = &imuQueOpt.front();
+
+                    qw= qw + thisImu->orientation.w;
+                    qx= qx + thisImu->orientation.x;
+                    qy= qy + thisImu->orientation.y;
+                    qz= qz + thisImu->orientation.z;
+
+                    imu_counter = imu_counter + 1;
                 }
                 else
                     break;
             }
 
-            while (!imuQueFrame.empty())
-            {
-                if (ROS_TIME(&imuQueFrame.front()) < currentCorrectionTime - delta_t)
-                {
-                    lastImuT_Frame= ROS_TIME(&imuQueFrame.front());
-                    imuQueFrame.pop_front();
-                }
-                else
-                    break;
-            }
+            qw = qw/imu_counter;
+            qx = qx/imu_counter;
+            qy = qy/imu_counter;
+            qz = qz/imu_counter;
+
+            cout<< "Lidar pose x: " << lidarPose.translation().x() << endl;
+            cout<< "Lidar pose y: " << lidarPose.translation().y() << endl;
+            cout<< "Lidar pose z: " << lidarPose.translation().z() << endl;
 
             // initial pose
+       //     prevPose_  = gtsam::Pose3(gtsam::Rot3::Quaternion(qw, qx, qy, qz), gtsam::Point3(lidarPose.compose(lidar2Imu).translation().x(), lidarPose.compose(lidar2Imu).translation().y(), lidarPose.compose(lidar2Imu).translation().z()));
+
             prevPose_ = lidarPose.compose(lidar2Imu);
+
+            cout<< "Prev pose x: " << prevPose_.translation().x() << endl;
+            cout<< "Prev pose y: " << prevPose_.translation().y() << endl;
+            cout<< "Prev pose z: " << prevPose_.translation().z() << endl;
             gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise);
             graphFactors.add(priorPose);
             // initial velocity
@@ -416,6 +479,8 @@ public:
             imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
             imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
             imuIntegratorFrame_->resetIntegrationAndSetBias(prevBias_);
+
+            prevState_ = gtsam::NavState(prevPose_, prevVel_);
             
             key = 1;
             systemInitialized = true;
@@ -490,6 +555,7 @@ public:
         // add pose factor
         gtsam::Pose3 curPose = lidarPose.compose(lidar2Imu);
         gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key), curPose, degenerate ? correctionNoise2 : correctionNoise);
+        //gtsam::BetweenFactor<gtsam::Pose3> pose_factor(X(key-1), X(key), prevPose_.between(curPose), degenerate ? correctionNoise2 : correctionNoise);
         graphFactors.add(pose_factor);
         // insert predicted values
         gtsam::NavState propState_ = imuIntegratorOpt_->predict(prevState_, prevBias_);
@@ -568,7 +634,7 @@ public:
 
         Eigen::Vector3f ba(biasCur.accelerometer().x(), biasCur.accelerometer().y(), biasCur.accelerometer().z());
         Eigen::Vector3f bg(biasCur.gyroscope().x(), biasCur.gyroscope().y(), biasCur.gyroscope().z());
-        if (ba.norm() > 1.0 || bg.norm() > 1.0)
+        if (ba.norm() > 10.0 || bg.norm() > 10.0)
         {
             ROS_WARN("Large bias, reset IMU-preintegration!");
             return true;
@@ -640,6 +706,74 @@ public:
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imu_raw)
     {
         std::lock_guard<std::mutex> lock(mtx);
+
+        //static float qx_0 = 0;
+        //static float qy_0 = 0;
+        //static float qz_0 = 0;
+        //static float qw_0 = 0;
+
+        //static float accx_0 = 0;
+        //static float accy_0 = 0;
+        //static float accz_0 = 0;
+
+        //static float gyrx_0 = 0;
+        //static float gyry_0 = 0;
+        //static float gyrz_0 = 0;
+
+        //static bool setImu_0 = false;
+
+        //static int imuCounter = 1;
+        //
+        //if (setImu_0 == false){
+        //    qx_0 += imu_raw->orientation.x;
+        //    qy_0 += imu_raw->orientation.y;
+        //    qz_0 += imu_raw->orientation.z;
+        //    qw_0 += imu_raw->orientation.w;
+
+        //    accx_0 += imu_raw->linear_acceleration.x;
+        //    accy_0 += imu_raw->linear_acceleration.y;
+        //    accz_0 += imu_raw->linear_acceleration.z;
+
+        //    gyrx_0 += imu_raw->angular_velocity.x;
+        //    gyry_0 += imu_raw->angular_velocity.y;
+        //    gyrz_0 += imu_raw->angular_velocity.z;
+
+        //    if(imuCounter == 1000){
+        //        setImu_0 = true;
+
+        //        qx_0 /= 1000;
+        //        qy_0 /= 1000;
+        //        qz_0 /= 1000;
+        //        qw_0 /= 1000;
+
+        //        accx_0 /= 1000;
+        //        accy_0 /= 1000;
+        //        accz_0 /= 1000;
+
+        //        gyrx_0 /= 1000;
+        //        gyry_0 /= 1000;
+        //        gyrz_0 /= 1000;
+
+        //        ROS_INFO("\033[1;34m\n--->Imu Preintegration:\033[0m initial Imu set!");
+        //    }
+        //    ++imuCounter;
+        //}
+
+        //sensor_msgs::Imu tmpImu = *imu_raw; 
+
+        //tmpImu.orientation.x = imu_raw->orientation.x; // - qx_0;
+        //tmpImu.orientation.y = imu_raw->orientation.y; // - qy_0;
+        //tmpImu.orientation.z = imu_raw->orientation.z; // - qz_0;
+        //tmpImu.orientation.w = imu_raw->orientation.w; // - qw_0;
+
+        //tmpImu.linear_acceleration.x = imu_raw->linear_acceleration.x - accx_0;
+        //tmpImu.linear_acceleration.y = imu_raw->linear_acceleration.y - accy_0;
+        //tmpImu.linear_acceleration.z = imu_raw->linear_acceleration.z - accz_0 + (- 9.80511);
+        ////  imuGravity: 9.80511
+
+        //tmpImu.angular_velocity.x = imu_raw->angular_velocity.x -  gyrx_0;
+        //tmpImu.angular_velocity.y = imu_raw->angular_velocity.y -  gyry_0;
+        //tmpImu.angular_velocity.z = imu_raw->angular_velocity.z -  gyrz_0;
 
         sensor_msgs::Imu thisImu = imuConverter(*imu_raw); 
         imuQueOpt.push_back(thisImu);

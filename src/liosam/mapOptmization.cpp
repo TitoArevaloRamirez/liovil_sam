@@ -154,6 +154,8 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
+    gtsam::Pose3 initialPose;
+    bool existInitialPose = false;
 
     mapOptimization()
     {
@@ -250,7 +252,8 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         static double timeLastProcessing = -1;
-        if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)
+        if ((timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval) && (existInitialPose == true))
+        //if ((timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval))
         {
             timeLastProcessing = timeLaserInfoCur;
 
@@ -310,6 +313,37 @@ public:
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
     {
         gpsQueue.push_back(*gpsMsg);
+
+        if(existInitialPose == false){
+            static int gpsCounter = 1;
+            static float p_x_sum = 0;
+            static float p_y_sum = 0;
+            static float p_z_sum = 0;
+            
+            float p_x = gpsMsg->pose.pose.position.x;      //usr
+            float p_y = gpsMsg->pose.pose.position.y;      //usr
+            float p_z = gpsMsg->pose.pose.position.z;      //usr
+
+            p_x_sum += p_x;
+            p_y_sum += p_y;
+            p_z_sum += p_z;
+
+            if (gpsCounter == 10){
+                p_x = p_x_sum/10;
+                p_y = p_y_sum/10;
+                p_y = p_z_sum/10;
+
+                initialPose = gtsam::Pose3(gtsam::Rot3::Quaternion(1.0, 0, 0, 0), gtsam::Point3(p_x, p_y, p_z)); 
+
+                transformTobeMapped[3] = p_x;
+                transformTobeMapped[4] = p_y;
+                transformTobeMapped[5] = p_z;
+                existInitialPose = true;
+                ROS_INFO("\033[1;34m\n--->Map Optimizationi :\033[0m Average initial pose computed!");
+            }
+
+            ++gpsCounter;
+        }
     }
 
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
@@ -811,13 +845,6 @@ public:
         pubLoopConstraintEdge.publish(markerArray);
     }
 
-
-
-
-
-
-
-    
 
 
 
@@ -1361,6 +1388,7 @@ public:
         {
             if (std::abs(cloudInfo.imuPitchInit) < 1.4)
             {
+                //cout<<"Hola pitch < 1.4 transform update " <<endl;
                 double imuWeight = imuRPYWeight;
                 tf::Quaternion imuQuaternion;
                 tf::Quaternion transformQuaternion;
@@ -1425,6 +1453,25 @@ public:
             noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
             gtSAMgraph.add(PriorFactor<Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
             initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
+            //gtsam::Pose3 tmpPose = trans2gtsamPose(transformTobeMapped);
+            //float t_x = initialPose.translation().x();
+            //float t_y = initialPose.translation().y();
+            //float t_z = initialPose.translation().z();
+
+            //cout<< "Initial pose x: " << t_x << endl;
+            //cout<< "Initial pose y: " << t_y << endl;
+            //cout<< "Initial pose z: " << t_x << endl;
+
+            //float q_x = tmpPose.rotation().toQuaternion().x();
+            //float q_y = tmpPose.rotation().toQuaternion().y();
+            //float q_z = tmpPose.rotation().toQuaternion().z();
+            //float q_w = tmpPose.rotation().toQuaternion().w();
+
+            //tmpPose = gtsam::Pose3(gtsam::Rot3::Quaternion(q_w, q_x, q_y, q_z), gtsam::Point3(t_x, t_y, t_z));
+
+            //gtSAMgraph.add(PriorFactor<Pose3>(0, tmpPose, priorNoise));
+            //initialEstimate.insert(0, tmpPose);
+
         }else{
             noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
             gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
@@ -1665,6 +1712,7 @@ public:
         thisPose3D.z = latestEstimate.translation().z();
         thisPose3D.intensity = cloudKeyPoses3D->size(); // this can be used as index
         cloudKeyPoses3D->push_back(thisPose3D);
+        //cout<< "cloudKeyPoses3D: " << *cloudKeyPoses3D << endl;
 
         thisPose6D.x = thisPose3D.x;
         thisPose6D.y = thisPose3D.y;
@@ -1791,7 +1839,10 @@ public:
             {
                 if (std::abs(cloudInfo.imuPitchInit) < 1.4)
                 {
+
+                    //cout<<"Hola pitch < 1.4 publish odometry" <<endl;
                     double imuWeight = 0.1;
+                    //double imuWeight = imuRPYWeight;
                     tf::Quaternion imuQuaternion;
                     tf::Quaternion transformQuaternion;
                     double rollMid, pitchMid, yawMid;

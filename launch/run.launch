@@ -20,6 +20,7 @@
         <remap from="/gps_save" to="/dji_sdk/gps_position" />
     </node>
 
+
     <!--- Run camera_info edit 
     -->
     <node pkg="$(arg project)" type="camInfo_edit.py" name="$(arg project)_camInfo_edit" respawn="true" output="screen">
@@ -39,33 +40,50 @@
     -->
     <include file="$(find liovil_sam)/launch/include/module_loam.launch" />
 
+    <!--- Simulate RTK 
+    -->
+    <node pkg="$(arg project)" type="rtk_simulator.py" name="$(arg project)_rtk_simulator" respawn="true" output="screen">
+        <remap from="/gps_odometry" to="/odometry/gps" />
+    </node>
+
+    <!--- Run Lidar 2 Camera Pose 
+    -->
+    <node pkg="$(arg project)" type="lidar2CameraPose.py" name="$(arg project)_lidar2CameraPose" output="screen">
+        <remap from="/odom_lidar" to="/lio_sam/mapping/odometry" />
+    </node>
+
     <!--- Save Point Cloud Map 
+    -->
     <node pkg="$(arg project)" type="vlp16_points_listener.py" name="$(arg project)_listenSave_ptCloudMap" respawn="true" output="screen">
-        <param name="filename" value="/home/frc-ag/Data/MappingResults/PointCloud/"/>
+        <param name="filename" value="/home/frc-ag-4/Data/MappingResults/PointCloud/"/>
         <remap from="/ptCloud_save" to="/lio_sam/mapping/map_global" />
     </node>
-    -->
 
     <!--- Save Odometry GPS 
+    -->
     <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_NavSat" respawn="true" output="screen">
-        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_gps/"/>
+        <param name="filename" value="/home/frc-ag-4/Data/MappingResults/Odom_gps/"/>
         <remap from="/odom_save" to="/odometry/gps" />
     </node>
-    -->
 
     <!--- Save Odometry LiDAR 
+    -->
     <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_LiDAR" respawn="true" output="screen">
-        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_lidar/"/>
+        <param name="filename" value="/home/frc-ag-4/Data/MappingResults/Odom_lidar/"/>
         <remap from="/odom_save" to="/lio_sam/mapping/odometry" />
     </node>
-    -->
 
     <!--- Save Odometry Camera 
-    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_listenSave_Odom_Camera" respawn="true" output="screen">
-        <param name="filename" value="/home/frc-ag/Data/MappingResults/Odom_camera/"/>
-        <remap from="/odom_save" to="/liovil_sam_smart_smoother/odom_camera" />
-    </node>
     -->
+    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_leftCamera" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag-4/Data/MappingResults/Odom_camera_left/"/>
+        <remap from="/odom_save" to="/leftCam_odometry" />
+    </node>
+
+    <node pkg="$(arg project)" type="odom_listener.py" name="$(arg project)_rightCamera" respawn="true" output="screen">
+        <param name="filename" value="/home/frc-ag-4/Data/MappingResults/Odom_camera_right/"/>
+        <remap from="/odom_save" to="/rightCam_odometry" />
+    </node>
 
     <!--- Run Rviz 
     <include file="$(find liovil_sam)/launch/include/module_rviz.launch" />

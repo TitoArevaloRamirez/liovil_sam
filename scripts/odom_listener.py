@@ -19,7 +19,12 @@ def callback(odom):
     odom_y = odom.pose.pose.position.y
     odom_z = odom.pose.pose.position.z
 
-    rawData.append([odom_x, odom_y, odom_z, odom_timeStamp])
+    q_x = odom.pose.pose.orientation.x
+    q_y = odom.pose.pose.orientation.y
+    q_z = odom.pose.pose.orientation.z
+    q_w = odom.pose.pose.orientation.w
+
+    rawData.append([odom_x, odom_y, odom_z, q_x, q_y, q_z, q_w, odom_timeStamp])
 
     #print(np.shape(rawData))
     df = pd.DataFrame(rawData)

@@ -142,8 +142,79 @@ public:
 
     ~ImageProjection(){}
 
+    //void imuHandler(const sensor_msgs::Imu::ConstPtr& imu_raw)
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
+
+        //static float qx_0 = 0;
+        //static float qy_0 = 0;
+        //static float qz_0 = 0;
+        //static float qw_0 = 0;
+
+        //static float accx_0 = 0;
+        //static float accy_0 = 0;
+        //static float accz_0 = 0;
+
+        //static float gyrx_0 = 0;
+        //static float gyry_0 = 0;
+        //static float gyrz_0 = 0;
+
+        //static bool setImu_0 = false;
+
+        //static int imuCounter = 1;
+        //
+        //if (setImu_0 == false){
+        //    qx_0 += imu_raw->orientation.x;
+        //    qy_0 += imu_raw->orientation.y;
+        //    qz_0 += imu_raw->orientation.z;
+        //    qw_0 += imu_raw->orientation.w;
+
+        //    accx_0 += imu_raw->linear_acceleration.x;
+        //    accy_0 += imu_raw->linear_acceleration.y;
+        //    accz_0 += imu_raw->linear_acceleration.z;
+
+        //    gyrx_0 += imu_raw->angular_velocity.x;
+        //    gyry_0 += imu_raw->angular_velocity.y;
+        //    gyrz_0 += imu_raw->angular_velocity.z;
+
+        //    if(imuCounter == 1000){
+        //        setImu_0 = true;
+
+        //        qx_0 /= 1000;
+        //        qy_0 /= 1000;
+        //        qz_0 /= 1000;
+        //        qw_0 /= 1000;
+
+        //        accx_0 /= 1000;
+        //        accy_0 /= 1000;
+        //        accz_0 /= 1000;
+
+        //        gyrx_0 /= 1000;
+        //        gyry_0 /= 1000;
+        //        gyrz_0 /= 1000;
+
+        //        ROS_INFO("\033[1;34m\n--->Image Projection:\033[0m initial Imu set!");
+        //    }
+        //    ++imuCounter;
+        //}
+
+        //sensor_msgs::Imu tmpImu = *imu_raw; 
+
+        //tmpImu.orientation.x = imu_raw->orientation.x; // - qx_0;
+        //tmpImu.orientation.y = imu_raw->orientation.y; // - qy_0;
+        //tmpImu.orientation.z = imu_raw->orientation.z; // - qz_0;
+        //tmpImu.orientation.w = imu_raw->orientation.w; // - qw_0;
+
+        //tmpImu.linear_acceleration.x = imu_raw->linear_acceleration.x - accx_0;
+        //tmpImu.linear_acceleration.y = imu_raw->linear_acceleration.y - accy_0;
+        //tmpImu.linear_acceleration.z = imu_raw->linear_acceleration.z - accz_0 + (- 9.80511);
+        ////  imuGravity: 9.80511
+
+        //tmpImu.angular_velocity.x = imu_raw->angular_velocity.x -  gyrx_0;
+        //tmpImu.angular_velocity.y = imu_raw->angular_velocity.y -  gyry_0;
+        //tmpImu.angular_velocity.z = imu_raw->angular_velocity.z -  gyrz_0;
+
+        //sensor_msgs::Imu thisImu = imuConverter(*imu_raw); 
         sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
 
         std::lock_guard<std::mutex> lock1(imuLock);
