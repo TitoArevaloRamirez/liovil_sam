@@ -28,16 +28,24 @@
     </node>
 
     <!--- Visual Frontend 
-    -->
     <include file="$(find liovil_sam)/launch/include/module_visual_frontend.launch" />
+    -->
 
     <!--- VIO 
-    -->
     <include file="$(find liovil_sam)/launch/include/module_vio.launch" />
+    -->
 
     <!--- LOAM 
-    -->
     <include file="$(find liovil_sam)/launch/include/module_loam.launch" />
+    -->
+
+    <!--- ALOAM 
+    -->
+    <include file="$(find liovil_sam)/launch/include/module_aloam.launch" />
+
+    <!--- Sync ALOAM messages 
+    -->
+    <node pkg="$(arg project)" type="sync_aloam.py" name="$(arg project)_sync_ALOAM" respawn="true" output="screen"/>
 
     <!--- Save Point Cloud Map 
     <node pkg="$(arg project)" type="vlp16_points_listener.py" name="$(arg project)_listenSave_ptCloudMap" respawn="true" output="screen">

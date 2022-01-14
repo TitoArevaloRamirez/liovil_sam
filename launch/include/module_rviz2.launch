@@ -2,7 +2,13 @@
 
     <arg name="project" default="liovil_sam"/>
 
-    <!--- Run Rviz-->
+    <!--- Run Rviz
     <node pkg="rviz" type="rviz" name="$(arg project)_rviz_vilsam" args="-d $(find liovil_sam)/launch/include/config/rviz2.rviz" />
+    -->
+
+    <arg name="rviz" default="true" />
+    <group if="$(arg rviz)">
+        <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find liovil_sam)/launch/include/config/aloam_velodyne.rviz" />
+    </group>
 
 </launch>

@@ -154,9 +154,6 @@ public:
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
 
-    gtsam::Pose3 initialPose;
-    bool existInitialPose = false;
-
 
     mapOptimization()
     {
@@ -340,34 +337,6 @@ public:
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
     {
         gpsQueue.push_back(*gpsMsg);
-
-        if(existInitialPose == false){
-            static int gpsCounter = 1;
-            static float p_x_sum = 0;
-            static float p_y_sum = 0;
-            static float p_z_sum = 0;
-            
-            float p_x = gpsMsg->pose.pose.position.x;      //usr
-            float p_y = gpsMsg->pose.pose.position.y;      //usr
-            float p_z = gpsMsg->pose.pose.position.z;      //usr
-
-            p_x_sum += p_x;
-            p_y_sum += p_y;
-            p_z_sum += p_z;
-
-            if (gpsCounter == 10){
-                p_x = p_x_sum/10;
-                p_y = p_y_sum/10;
-                p_y = p_z_sum/10;
-
-                initialPose = gtsam::Pose3(gtsam::Rot3::Quaternion(1.0, 0, 0, 0), gtsam::Point3(p_x, p_y, p_z)); 
-                existInitialPose = true;
-                ROS_INFO("\033[1;33m\n---> :\033[0m Average initial pose computed!");
-            }
-
-            ++gpsCounter;
-        }
-
     }
 
     void pointAssociateToMap(PointType const * const pi, PointType * const po)
@@ -416,7 +385,8 @@ public:
         return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
     }
 
-    Eigen::Affine3f trans2Affine3f(float transformIn[]) {
+    Eigen::Affine3f trans2Affine3f(float transformIn[])
+    {
         return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
     }
 
@@ -1713,7 +1683,7 @@ public:
         thisPose3D.z = latestEstimate.translation().z();
         thisPose3D.intensity = cloudKeyPoses3D->size(); // this can be used as index
         cloudKeyPoses3D->push_back(thisPose3D);
-        //cout<< "cloudKeyPoses3D: " << *cloudKeyPoses3D << endl;
+        cout<< "cloudKeyPoses3D: " << *cloudKeyPoses3D << endl;
 
         thisPose6D.x = thisPose3D.x;
         thisPose6D.y = thisPose3D.y;

@@ -37,6 +37,7 @@ find_package(PCL REQUIRED QUIET)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(GTSAM REQUIRED QUIET)
 find_package(Eigen3 REQUIRED)
+find_package(Ceres REQUIRED)
 
 add_message_files(
   DIRECTORY msg
@@ -62,7 +63,7 @@ generate_messages(
 
 catkin_package(
   INCLUDE_DIRS include
-  DEPENDS PCL GTSAM
+  DEPENDS  EIGEN3 PCL GTSAM
 
   CATKIN_DEPENDS
   std_msgs
@@ -85,14 +86,15 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
 	${GTSAM_INCLUDE_DIR}
 	${EIGEN3_INCLUDE_DIR}
+    ${CERES_INCLUDE_DIRS}
 )
 
 # link directories
 link_directories(
-	include
+    include
 	${PCL_LIBRARY_DIRS}
-  ${OpenCV_LIBRARY_DIRS}
-  ${GTSAM_LIBRARY_DIRS}
+    ${OpenCV_LIBRARY_DIRS}
+    ${GTSAM_LIBRARY_DIRS}
 )
 
 #vio
@@ -114,15 +116,16 @@ set(SOURCES  include/vio/FixedLagSmoother.h
 
 ############################## LIOSAM ##############################
 
-# Range Image Projection
-add_executable(${PROJECT_NAME}_imageProjection src/liosam/imageProjection.cpp)
-add_dependencies(${PROJECT_NAME}_imageProjection ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-target_link_libraries(${PROJECT_NAME}_imageProjection ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+## Range Image Projection
+#add_executable(${PROJECT_NAME}_imageProjection src/liosam/imageProjection.cpp)
+#add_dependencies(${PROJECT_NAME}_imageProjection ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+#target_link_libraries(${PROJECT_NAME}_imageProjection ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+#
+## Feature Association
+#add_executable(${PROJECT_NAME}_featureExtraction src/liosam/featureExtraction.cpp)
+#add_dependencies(${PROJECT_NAME}_featureExtraction ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+#target_link_libraries(${PROJECT_NAME}_featureExtraction ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
-# Feature Association
-add_executable(${PROJECT_NAME}_featureExtraction src/liosam/featureExtraction.cpp)
-add_dependencies(${PROJECT_NAME}_featureExtraction ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
-target_link_libraries(${PROJECT_NAME}_featureExtraction ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
 # Mapping Optimization
 add_executable(${PROJECT_NAME}_mapOptmization src/liosam/mapOptmization.cpp)
@@ -133,6 +136,21 @@ target_link_libraries(${PROJECT_NAME}_mapOptmization ${catkin_LIBRARIES} ${PCL_L
 # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/liosam/imuPreintegration.cpp)
 target_link_libraries(${PROJECT_NAME}_imuPreintegration ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+
+# IMU Preintegration
+add_executable(${PROJECT_NAME}_gps_loopClosure_correction src/liosam/gps_loopClosure_correction)
+target_link_libraries(${PROJECT_NAME}_gps_loopClosure_correction ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+
+############################## ALOAM ##############################
+
+add_executable(${PROJECT_NAME}_ascanRegistration src/aloam/scanRegistration.cpp)
+target_link_libraries(${PROJECT_NAME}_ascanRegistration ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+
+add_executable(${PROJECT_NAME}_alaserOdometry src/aloam/laserOdometry.cpp)
+target_link_libraries(${PROJECT_NAME}_alaserOdometry ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES})
+
+add_executable(${PROJECT_NAME}_alaserMapping src/aloam/laserMapping.cpp)
+target_link_libraries(${PROJECT_NAME}_alaserMapping ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${CERES_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 ############################## Visual Frontend ##############################
 

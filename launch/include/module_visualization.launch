@@ -5,8 +5,14 @@
   -->
   <node name="$(arg project)_show_frame_node" pkg="$(arg project)" type="$(arg project)_show_frame_node" output="screen"/>
 
-  <!--- Run Rviz
-  -->
+  <!--- Run Rviz ALOAM
     <node pkg="rviz" type="rviz" name="$(arg project)_rviz" args="-d $(find liovil_sam)/launch/include/config/rviz.rviz" />
+  -->
+
+    <arg name="rviz" default="true" />
+    <group if="$(arg rviz)">
+        <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find liovil_sam)/launch/include/config/aloam_velodyne.rviz" />
+    </group>
+
 
 </launch>

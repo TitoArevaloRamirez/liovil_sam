@@ -23,20 +23,6 @@ using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 //using gtsam::symbol_shorthand::G; // GPS pose
 
-
-struct PointXYZIRPYT
-{
-    PCL_ADD_POINT4D
-    PCL_ADD_INTENSITY;                  // preferred way of adding a XYZ+padding
-    float roll;
-    float pitch;
-    float yaw;
-    double time;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW   // make sure our new allocators are aligned
-} EIGEN_ALIGN16;                    // enforce SSE padding for correct memory alignment
-
-typedef PointXYZIRPYT  PointTypePose;
-
 class TransformFusion : public ParamServer
 {
 public:
@@ -76,8 +62,8 @@ public:
 
         subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init", 5, &TransformFusion::lidarOdometryHandler, this, ros::TransportHints().tcpNoDelay());
 
-        subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
-        //subImuOdometry   = nh.subscribe<nav_msgs::Odometry>("/odom_lidar_usr_sync",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
+        //subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
+        subImuOdometry   = nh.subscribe<nav_msgs::Odometry>("/odom_lidar_usr_sync",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
 
         pubImuOdometry   = nh.advertise<nav_msgs::Odometry>(odomTopic, 2000);
         pubImuPath       = nh.advertise<nav_msgs::Path>    ("lio_sam/imu/path", 1);
@@ -177,18 +163,8 @@ class IMUPreintegration : public ParamServer
 {
 public:
 
-    pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
-    pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
-    pcl::PointCloud<PointType>::Ptr copy_cloudKeyPoses3D;
-    pcl::PointCloud<PointTypePose>::Ptr copy_cloudKeyPoses6D;
-
 
     std::mutex mtx;
-
-    float transformTobeMapped[6];
-
-    Eigen::Affine3f incrementalOdometryAffineFront;
-    Eigen::Affine3f incrementalOdometryAffineBack;
 
     ros::Subscriber subImu;
     ros::Subscriber subOdometry;
@@ -227,8 +203,6 @@ public:
     gtsam::NavState prevState_;
     gtsam::imuBias::ConstantBias prevBias_;
 
-    gtsam::Pose3 prevLidarPose;
-
     gtsam::NavState prevStateOdom;
     gtsam::imuBias::ConstantBias prevBiasOdom;
 
@@ -247,8 +221,8 @@ public:
     double lastImuT_opt = -1;
     double lastImuT_Frame = -1;
 
-    gtsam::ISAM2 optimizer;
-    gtsam::NonlinearFactorGraph graphFactors;
+    gtsam::ISAM2 *optimizer;
+    gtsam::NonlinearFactorGraph *graphFactors;
     gtsam::Values graphValues;
     gtsam::Values result;
 
@@ -264,31 +238,22 @@ public:
 
     IMUPreintegration(){
 
-        cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
-        cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
-        copy_cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
-        copy_cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
+        graphFactors = new gtsam::NonlinearFactorGraph();
 
-        //graphFactors = new gtsam::NonlinearFactorGraph();
+        gtsam::Values NewGraphValues;
+        graphValues = NewGraphValues;
 
-        //gtsam::Values NewGraphValues;
-        //graphValues = NewGraphValues;
-
-        //gtsam::ISAM2Params optParameters;
-        //optParameters.relinearizeThreshold = 0.1;
-        //optParameters.relinearizeSkip = 1;
-        //optimizer = new gtsam::ISAM2(optParameters);
-
-        //for (int i = 0; i < 6; ++i){
-        //    transformTobeMapped[i] = 0;
-        //}
+        gtsam::ISAM2Params optParameters;
+        optParameters.relinearizeThreshold = 0.1;
+        optParameters.relinearizeSkip = 1;
+        optimizer = new gtsam::ISAM2(optParameters);
 
 
         subImu      = nh.subscribe<sensor_msgs::Imu>  (imuTopic, 2000, &IMUPreintegration::imuHandler,      this, ros::TransportHints().tcpNoDelay());
         //subOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry_incremental", 5,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
 
-        subOdometry = nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init", 500,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
-        //subOdometry = nh.subscribe<nav_msgs::Odometry>("/laser_odom_to_init", 500,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
+        //subOdometry = nh.subscribe<nav_msgs::Odometry>("/aft_mapped_to_init_high_frec", 500,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
+        subOdometry = nh.subscribe<nav_msgs::Odometry>("/laser_odom_to_init", 500,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
 
         //subOdometryByPass = nh.subscribe<nav_msgs::Odometry>("/laser_odom_to_init", 500,    &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
 
@@ -298,7 +263,7 @@ public:
         
         //subStereo = nh.subscribe<nav_msgs::Odometry> ("/odom_camera", 200, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
         //
-        subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 2000, &IMUPreintegration::gpsHandler, this, ros::TransportHints().tcpNoDelay());
+        //subGPS   = nh.subscribe<nav_msgs::Odometry> (gpsTopic, 2000, &IMUPreintegration::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         //
         //subStereo = nh.subscribe<nav_msgs::Odometry> ("liovil_sam_smart_smoother/odom_camera", 2000, &IMUPreintegration::stereoHandler, this, ros::TransportHints().tcpNoDelay()); //usr
 
@@ -324,19 +289,19 @@ public:
         
     }
 
-    void resetOptimization()
-    {
-        gtsam::ISAM2Params optParameters;
-        optParameters.relinearizeThreshold = 0.1;
-        optParameters.relinearizeSkip = 1;
-        optimizer = gtsam::ISAM2(optParameters);
+    //void resetOptimization()
+    //{
+    //    gtsam::ISAM2Params optParameters;
+    //    optParameters.relinearizeThreshold = 0.1;
+    //    optParameters.relinearizeSkip = 1;
+    //    optimizer = gtsam::ISAM2(optParameters);
 
-        gtsam::NonlinearFactorGraph newGraphFactors;
-        graphFactors = newGraphFactors;
+    //    gtsam::NonlinearFactorGraph newGraphFactors;
+    //    graphFactors = newGraphFactors;
 
-        gtsam::Values NewGraphValues;
-        graphValues = NewGraphValues;
-    }
+    //    gtsam::Values NewGraphValues;
+    //    graphValues = NewGraphValues;
+    //}
 
     void resetParams()
     {
@@ -344,10 +309,6 @@ public:
         doneFirstOpt = false;
         readKeyFrames = false; //usr
         systemInitialized = false;
-    }
-
-    Eigen::Affine3f trans2Affine3f(float transformIn[]) {
-        return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
     }
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
@@ -359,18 +320,6 @@ public:
     {
         if (gpsQueue.empty())
             return;
-
-        if (cloudKeyPoses3D->points.empty()){
-            cout<<"No key Poses" <<endl;
-            return;
-        }
-        else
-        {
-            if (pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0){ //5.0){
-                cout<<"Cloud key poses lower than 5 mts" <<endl;
-                return;
-            }
-        }
 
         // pose covariance small, no need to correct
         //if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold){
@@ -402,7 +351,7 @@ public:
                 // GPS too noisy, skip
                 float noise_x = thisGPS.pose.covariance[0];
                 float noise_y = thisGPS.pose.covariance[7];
-                float noise_z = 0.1; //thisGPS.pose.covariance[14];
+                float noise_z = thisGPS.pose.covariance[14];
                 if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold){
                     //cout<<"GPS noise grater than: "<< gpsCovThreshold <<endl;
                     continue;
@@ -419,7 +368,7 @@ public:
                     noise_z = 0.01;
                 }
                 */
-                //noise_z = 0.01;
+                noise_z = 0.01;
 
                 // GPS not properly initialized (0,0,0)
                 if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6){
@@ -432,7 +381,7 @@ public:
                 curGPSPoint.x = gps_x;
                 curGPSPoint.y = gps_y;
                 curGPSPoint.z = gps_z;
-                if (pointDistance(curGPSPoint, lastGPSPoint) < 3.0){
+                if (pointDistance(curGPSPoint, lastGPSPoint) < 1.0){
                     //cout<<"Distance between GPS points lower than: "<< 1.0 << endl;
                     continue;
                 }
@@ -445,7 +394,7 @@ public:
                 //Vector3 << 0.01f, 0.10f, 0.01f;
                 gtsam::noiseModel::Diagonal::shared_ptr gps_noise = gtsam::noiseModel::Diagonal::Variances(Vector3);
                 gtsam::GPSFactor gps_factor(X(key), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
-                graphFactors.add(gps_factor);
+                graphFactors->add(gps_factor);
 
                 aLoopIsClosed = true;
                 std::cout << "\033[1;35m---->Imu Preintegration:  GPS added\033[0m" << std::endl;
@@ -492,12 +441,6 @@ public:
         //std::cout << "\033[1;33m----> new Stereo Odom\033[0m" << std::endl;
     }
 
-    gtsam::Pose3 trans2gtsamPose(float transformIn[])
-    {
-        return gtsam::Pose3(gtsam::Rot3::RzRyRx(transformIn[0], transformIn[1], transformIn[2]), 
-                                  gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
-    }
-
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -521,71 +464,54 @@ public:
         bool degenerate = (int)odomMsg->pose.covariance[0] == 1 ? true : false;
         gtsam::Pose3 lidarPose = gtsam::Pose3(gtsam::Rot3::Quaternion(r_w, r_x, r_y, r_z), gtsam::Point3(p_x, p_y, p_z));
 
+
         // 0. initialize system
         if (systemInitialized == false)
         {
-            resetOptimization();
-            
-            float roll_mean, pitch_mean, yaw_mean;
-            float qx, qy, qz, qw;
-            int imu_counter;
+            //resetOptimization();
 
-            qx=0;
-            qy=0;
-            qz=0;
-            qw=0;
-            imu_counter=1;
             // pop old IMU message
             while (!imuQueOpt.empty())
             {
                 if (ROS_TIME(&imuQueOpt.front()) < currentCorrectionTime - delta_t)
                 {
                     lastImuT_opt = ROS_TIME(&imuQueOpt.front());
-
-                    sensor_msgs::Imu *thisImu = &imuQueOpt.front();
-
-                    qw= qw + thisImu->orientation.w;
-                    qx= qx + thisImu->orientation.x;
-                    qy= qy + thisImu->orientation.y;
-                    qz= qz + thisImu->orientation.z;
-
-                    imu_counter = imu_counter + 1;
-
                     imuQueOpt.pop_front();
                 }
                 else
                     break;
             }
 
-            qw = qw/imu_counter;
-            qx = qx/imu_counter;
-            qy = qy/imu_counter;
-            qz = qz/imu_counter;
-
-            prevPose_  = gtsam::Pose3(gtsam::Rot3::Quaternion(qw, qx, qy, qz), gtsam::Point3(lidarPose.compose(lidar2Imu).translation().x(), lidarPose.compose(lidar2Imu).translation().y(), lidarPose.compose(lidar2Imu).translation().z()));
+            while (!imuQueFrame.empty())
+            {
+                if (ROS_TIME(&imuQueFrame.front()) < currentCorrectionTime - delta_t)
+                {
+                    lastImuT_Frame= ROS_TIME(&imuQueFrame.front());
+                    imuQueFrame.pop_front();
+                }
+                else
+                    break;
+            }
 
             // initial pose
-            //prevPose_ = gtsam::Pose3(gtsam::Rot3::Quaternion(1,0,0,0), gtsam::Point3(0,0,0));//lidarPose.compose(lidar2Imu);
-            //prevPose_ = lidarPose.compose(lidar2Imu);
-            prevLidarPose = prevPose_;
-
+            prevPose_ = lidarPose.compose(lidar2Imu);
             gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise);
-            graphFactors.add(priorPose);
+            graphFactors->add(priorPose);
             // initial velocity
             prevVel_ = gtsam::Vector3(0, 0, 0);
             gtsam::PriorFactor<gtsam::Vector3> priorVel(V(0), prevVel_, priorVelNoise);
-            graphFactors.add(priorVel);
+            graphFactors->add(priorVel);
             // initial bias
             prevBias_ = gtsam::imuBias::ConstantBias();
             gtsam::PriorFactor<gtsam::imuBias::ConstantBias> priorBias(B(0), prevBias_, priorBiasNoise);
-            graphFactors.add(priorBias);
+            graphFactors->add(priorBias);
             // add values
             graphValues.insert(X(0), prevPose_);
             graphValues.insert(V(0), prevVel_);
             graphValues.insert(B(0), prevBias_);
             // optimize once
-            optimizer.update(graphFactors, graphValues);
-            graphFactors.resize(0);
+            optimizer->update(*graphFactors, graphValues);
+            graphFactors->resize(0);
             graphValues.clear();
 
             imuIntegratorImu_->resetIntegrationAndSetBias(prevBias_);
@@ -598,8 +524,8 @@ public:
         }
 
 
-        //// reset graph for speed
-        //if (key >= 100)
+        // reset graph for speed
+        //if ((key >= 100)
         //{
         //    std::cout<<"100 keys frame lidar odometry" << std::endl;
         //    readKeyFrames = false; //usr
@@ -656,9 +582,9 @@ public:
         // add imu factor to graph
         const gtsam::PreintegratedImuMeasurements& preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorOpt_);
         gtsam::ImuFactor imu_factor(X(key - 1), V(key - 1), X(key), V(key), B(key - 1), preint_imu);
-        graphFactors.add(imu_factor);
+        graphFactors->add(imu_factor);
         // add imu bias between factor
-        graphFactors.add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key - 1), B(key), gtsam::imuBias::ConstantBias(),
+        graphFactors->add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key - 1), B(key), gtsam::imuBias::ConstantBias(),
                          gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegratorOpt_->deltaTij()) * noiseModelBetweenBias)));
 
         //add stereo factor
@@ -692,65 +618,12 @@ public:
         //gtsam::Pose3 poseTo(curr_Q, curr_T);
 
 
+        gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key), curPose, degenerate ? correctionNoise2 : correctionNoise);
+        //gtsam::BetweenFactor<gtsam::Pose3> pose_factor(X(key-1), X(key), poseFrom.between(poseTo), degenerate ? correctionNoise2 : correctionNoise);
 
-        //transformTobeMapped[0] = prevLidarPose.rotation().roll();
-        //transformTobeMapped[1] = prevLidarPose.rotation().pitch();
-        //transformTobeMapped[2] = prevLidarPose.rotation().yaw();
-        //transformTobeMapped[3] = prevLidarPose.translation().x();
-        //transformTobeMapped[4] = prevLidarPose.translation().y();
-        //transformTobeMapped[5] = prevLidarPose.translation().z();
+        graphFactors->add(pose_factor);
 
-        //Eigen::Affine3f prevLidar_affine = trans2Affine3f(transformTobeMapped);
-
-        //transformTobeMapped[0] = curPose.rotation().roll();
-        //transformTobeMapped[1] = curPose.rotation().pitch();
-        //transformTobeMapped[2] = curPose.rotation().yaw();
-        //transformTobeMapped[3] = curPose.translation().x();
-        //transformTobeMapped[4] = curPose.translation().y();
-        //transformTobeMapped[5] = curPose.translation().z();
-
-        //Eigen::Affine3f currLidar_affine = trans2Affine3f(transformTobeMapped);
-
-        //Eigen::Affine3f incrLidar_affine  = prevLidar_affine.inverse() * currLidar_affine;
-
-        //transformTobeMapped[0] = prevPose_.rotation().roll();
-        //transformTobeMapped[1] = prevPose_.rotation().pitch();
-        //transformTobeMapped[2] = prevPose_.rotation().yaw();
-        //transformTobeMapped[3] = prevPose_.translation().x();
-        //transformTobeMapped[4] = prevPose_.translation().y();
-        //transformTobeMapped[5] = prevPose_.translation().z();
-
-        //Eigen::Affine3f prevPose_affine = trans2Affine3f(transformTobeMapped);
-
-        //Eigen::Affine3f currPose_affine  = prevPose_affine*incrLidar_affine;
-
-        //float x, y, z, roll, pitch, yaw;
-        //pcl::getTranslationAndEulerAngles (currPose_affine, x, y, z, roll, pitch, yaw);
-
-        //transformTobeMapped[0] = roll;
-        //transformTobeMapped[1] = pitch;
-        //transformTobeMapped[2] = yaw;
-        //transformTobeMapped[3] = x;
-        //transformTobeMapped[4] = y;
-        //transformTobeMapped[5] = z;
-        //
-        //gtsam::Pose3 incrPose = trans2gtsamPose(transformTobeMapped);
-        //
-        //gtsam::BetweenFactor<gtsam::Pose3> pose_factor(X(key-1), X(key), prevPose_.between(incrPose), degenerate ? correctionNoise2 : correctionNoise);
-
-        //prevLidarPose = curPose;
-        
-        gtsam::BetweenFactor<gtsam::Pose3> pose_factor(X(key-1), X(key), prevLidarPose.between(curPose), degenerate ? correctionNoise2 : correctionNoise);
-
-        prevLidarPose = curPose;
-
-
-        //gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key), curPose, degenerate ? correctionNoise2 : correctionNoise);
-
-        graphFactors.add(pose_factor);
-
-        addGPSFactor(currentCorrectionTime); //usr
-
+        //addGPSFactor(currentCorrectionTime); //usr
         // insert predicted values
         gtsam::NavState propState_ = imuIntegratorOpt_->predict(prevState_, prevBias_);
         //graphValues.insert(X(key), propState_.pose());
@@ -768,61 +641,41 @@ public:
 
 
         // optimize
-        optimizer.update(graphFactors, graphValues);
-        optimizer.update();
+        optimizer->update(*graphFactors, graphValues);
+        optimizer->update();
 
         if (aLoopIsClosed == true)
         {
-            optimizer.update();
-            optimizer.update();
-            optimizer.update();
-            optimizer.update();
-            optimizer.update();
-            //aLoopIsClosed = false;
+            optimizer->update();
+            optimizer->update();
+            optimizer->update();
+            optimizer->update();
+            optimizer->update();
+            aLoopIsClosed = false;
             std::cout<< "\033[1;35m\n >>> Loop Closed true and false: \033[0m"<< std::endl;
         }
 
-        graphFactors.resize(0);
+        graphFactors->resize(0);
         graphValues.clear();
         // Overwrite the beginning of the preintegration for the next step.
-        result  = optimizer.calculateEstimate();
+        result  = optimizer->calculateEstimate();
         prevPose_  = result.at<gtsam::Pose3>(X(key));
         prevVel_   = result.at<gtsam::Vector3>(V(key));
         prevState_ = gtsam::NavState(prevPose_, prevVel_);
         prevBias_  = result.at<gtsam::imuBias::ConstantBias>(B(key));
 
-        PointType thisPose3D;
-        PointTypePose thisPose6D;
-
-        thisPose3D.x = prevPose_.translation().x();
-        thisPose3D.y = prevPose_.translation().y();
-        thisPose3D.z = prevPose_.translation().z();
-        thisPose3D.intensity = cloudKeyPoses3D->size(); // this can be used as index
-        cloudKeyPoses3D->push_back(thisPose3D);
-
-        thisPose6D.x = thisPose3D.x;
-        thisPose6D.y = thisPose3D.y;
-        thisPose6D.z = thisPose3D.z;
-        thisPose6D.intensity = thisPose3D.intensity ; // this can be used as index
-        thisPose6D.roll  = prevPose_.rotation().roll();
-        thisPose6D.pitch = prevPose_.rotation().pitch();
-        thisPose6D.yaw   = prevPose_.rotation().yaw();
-        thisPose6D.time = currentCorrectionTime;
-        cloudKeyPoses6D->push_back(thisPose6D);
-
-        //std::cout<< "\033[1;35m\n >>> IMU Preintegration nodes: \033[0m"<< result.size() << std::endl;
+        std::cout<< "\033[1;35m\n >>> IMU Preintegration nodes: \033[0m"<< result.size() << std::endl;
 
         // Reset the optimization preintegration object.
         imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
 
 
         // check optimization
-        //if (failureDetection(prevVel_, prevBias_))
-        //{
-        //    //resetParams();
-        //    std::cout<< "\033[1;36m\n >>> failure detection  \033[0m"<< std::endl;
-        //    return;
-        //}
+        if (failureDetection(prevVel_, prevBias_))
+        {
+            resetParams();
+            return;
+        }
 
 
         // 2. after optiization, re-propagate imu odometry preintegration
@@ -853,83 +706,68 @@ public:
             }
         }
 
-        // publish odometry 
+        nav_msgs::Odometry odometry;
+        // publish odometry nav_msgs::Odometry odometry;
+        odometry.header.stamp = odomMsg->header.stamp;
+        odometry.header.frame_id = "map";
+        odometry.child_frame_id = "odom_lidar_usr";
 
-        //nav_msgs::Odometry odometry;
-        //odometry.header.stamp = odomMsg->header.stamp;
-        //odometry.header.frame_id = "map";
-        //odometry.child_frame_id = "odom_lidar_usr";
+        // transform imu pose to ldiar
+        gtsam::Pose3 lidarPose_opt = gtsam::Pose3(prevStateOdom.quaternion(), prevStateOdom.position());
 
-        //// transform imu pose to ldiar
-        //gtsam::Pose3 lidarPose_opt = gtsam::Pose3(prevStateOdom.quaternion(), prevStateOdom.position());
-
-        //odometry.pose.pose.position.x = lidarPose_opt.translation().x();
-        //odometry.pose.pose.position.y = lidarPose_opt.translation().y();
-        //odometry.pose.pose.position.z = lidarPose_opt.translation().z();
-        //odometry.pose.pose.orientation.x = lidarPose_opt.rotation().toQuaternion().x();
-        //odometry.pose.pose.orientation.y = lidarPose_opt.rotation().toQuaternion().y();
-        //odometry.pose.pose.orientation.z = lidarPose_opt.rotation().toQuaternion().z();
-        //odometry.pose.pose.orientation.w = lidarPose_opt.rotation().toQuaternion().w();
-        //
-        //odometry.twist.twist.linear.x = prevStateOdom.velocity().x();
-        //odometry.twist.twist.linear.y = prevStateOdom.velocity().y();
-        //odometry.twist.twist.linear.z = prevStateOdom.velocity().z();
+        odometry.pose.pose.position.x = lidarPose_opt.translation().x();
+        odometry.pose.pose.position.y = lidarPose_opt.translation().y();
+        odometry.pose.pose.position.z = lidarPose_opt.translation().z();
+        odometry.pose.pose.orientation.x = lidarPose_opt.rotation().toQuaternion().x();
+        odometry.pose.pose.orientation.y = lidarPose_opt.rotation().toQuaternion().y();
+        odometry.pose.pose.orientation.z = lidarPose_opt.rotation().toQuaternion().z();
+        odometry.pose.pose.orientation.w = lidarPose_opt.rotation().toQuaternion().w();
+        
+        odometry.twist.twist.linear.x = prevStateOdom.velocity().x();
+        odometry.twist.twist.linear.y = prevStateOdom.velocity().y();
+        odometry.twist.twist.linear.z = prevStateOdom.velocity().z();
 
         //odometry.twist.twist.angular.x = thisImu.angular_velocity.x + prevBiasOdom.gyroscope().x();
         //odometry.twist.twist.angular.y = thisImu.angular_velocity.y + prevBiasOdom.gyroscope().y();
         //odometry.twist.twist.angular.z = thisImu.angular_velocity.z + prevBiasOdom.gyroscope().z();
-        //pubLidarOdometry.publish(odometry);
+        pubLidarOdometry.publish(odometry);
 
         ++key;
         doneFirstOpt = true;
         readKeyFrames = true; //usr
 
-        correctPoses();
+        //correctPoses();
 
         //std::cout<<"Key: " << key<< std::endl;  
         //std::cout<<"chao odometry handler"<< std::endl;
     }
 
-    void correctPoses()
-    {
-        if (key<=1)
-            return;
+   // void correctPoses()
+   // {
+   //     if (key==0)
+   //         return;
 
-        if (aLoopIsClosed == true)
-        {
-            // update key poses
-            int numPoses = key-1;
-            for (int i = 0; i < numPoses; ++i)
-            {
-                cloudKeyPoses3D->points[i].x = result.at<gtsam::Pose3>(X(i)).translation().x();
-                cloudKeyPoses3D->points[i].y = result.at<gtsam::Pose3>(X(i)).translation().y();
-                cloudKeyPoses3D->points[i].z = result.at<gtsam::Pose3>(X(i)).translation().z();
+   //     if (aLoopIsClosed == true)
+   //     {
+   //         // update key poses
+   //         int numPoses = result.size();
+   //         for (int i = 0; i < numPoses; ++i)
+   //         {
+   //             cloudKeyPoses3D->points[i].x = result.at<Pose3>(i).translation().x();
+   //             cloudKeyPoses3D->points[i].y = result.at<Pose3>(i).translation().y();
+   //             cloudKeyPoses3D->points[i].z = result.at<Pose3>(i).translation().z();
 
-                cloudKeyPoses6D->points[i].x = cloudKeyPoses3D->points[i].x;
-                cloudKeyPoses6D->points[i].y = cloudKeyPoses3D->points[i].y;
-                cloudKeyPoses6D->points[i].z = cloudKeyPoses3D->points[i].z;
-                cloudKeyPoses6D->points[i].roll  = result.at<gtsam::Pose3>(X(i)).rotation().roll();
-                cloudKeyPoses6D->points[i].pitch = result.at<gtsam::Pose3>(X(i)).rotation().pitch();
-                cloudKeyPoses6D->points[i].yaw   = result.at<gtsam::Pose3>(X(i)).rotation().yaw();
+   //             cloudKeyPoses6D->points[i].x = cloudKeyPoses3D->points[i].x;
+   //             cloudKeyPoses6D->points[i].y = cloudKeyPoses3D->points[i].y;
+   //             cloudKeyPoses6D->points[i].z = cloudKeyPoses3D->points[i].z;
+   //             cloudKeyPoses6D->points[i].roll  = result.at<Pose3>(i).rotation().roll();
+   //             cloudKeyPoses6D->points[i].pitch = result.at<Pose3>(i).rotation().pitch();
+   //             cloudKeyPoses6D->points[i].yaw   = result.at<Pose3>(i).rotation().yaw();
+   //         }
 
-                //nav_msgs::Odometry odometry;
-                //odometry.header.stamp = ros::Time().fromSec(cloudKeyPoses6D->points[i].time);
-                //odometry.header.frame_id = "map";
-                //odometry.child_frame_id = "odom_lidar_usr";
-
-                //odometry.pose.pose.position.x = result.at<gtsam::Pose3>(X(i)).translation().x();
-                //odometry.pose.pose.position.y = result.at<gtsam::Pose3>(X(i)).translation().y();
-                //odometry.pose.pose.position.z = result.at<gtsam::Pose3>(X(i)).translation().z();
-                //odometry.pose.pose.orientation.x = result.at<gtsam::Pose3>(X(i)).rotation().toQuaternion().x();
-                //odometry.pose.pose.orientation.y = result.at<gtsam::Pose3>(X(i)).rotation().toQuaternion().y();
-                //odometry.pose.pose.orientation.z = result.at<gtsam::Pose3>(X(i)).rotation().toQuaternion().z();
-                //odometry.pose.pose.orientation.w = result.at<gtsam::Pose3>(X(i)).rotation().toQuaternion().w();
-                //pubLidarOdometry.publish(odometry);
-            }
-
-            aLoopIsClosed = false;
-        }
-    }
+   //         aLoopIsClosed = false;
+   //     }
+   // }
 
     bool failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur)
     {
@@ -1002,7 +840,7 @@ public:
                 gtsam::Pose3 stereoPose = gtsam::Pose3(gtsam::Rot3::Quaternion(q_w, q_x, q_y, q_z), gtsam::Point3(p_x, p_y, p_z));
 
                 gtsam::PriorFactor<gtsam::Pose3> stereo_factor(X(key), stereoPose, stereo_noise);
-                graphFactors.add(stereo_factor);
+                graphFactors->add(stereo_factor);
 
                 std::cout << "\033[1;34m---->ImuPreintegration: stereo factor added \033[0m" << std::endl;
                 break;
@@ -1037,8 +875,8 @@ public:
         // publish odometry
         nav_msgs::Odometry odometry;
         odometry.header.stamp = thisImu.header.stamp;
-        odometry.header.frame_id = odometryFrame;
-        //odometry.header.frame_id = "map";
+        //odometry.header.frame_id = odometryFrame;
+        odometry.header.frame_id = "map";
         odometry.child_frame_id = "odom_imu";
 
         // transform imu pose to ldiar
@@ -1060,7 +898,7 @@ public:
         odometry.twist.twist.angular.y = thisImu.angular_velocity.y + prevBiasOdom.gyroscope().y();
         odometry.twist.twist.angular.z = thisImu.angular_velocity.z + prevBiasOdom.gyroscope().z();
         pubImuOdometry.publish(odometry);
-//        pubLidarOdometry.publish(odometry);
+        //pubLidarOdometry.publish(odometry);
     }
 };
 
